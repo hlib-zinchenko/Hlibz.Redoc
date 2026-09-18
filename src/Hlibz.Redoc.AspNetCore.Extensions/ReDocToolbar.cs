@@ -5,9 +5,9 @@ namespace Hlibz.Redoc.AspNetCore.Extensions;
 /// controls line up regardless of which one is enabled or renders first.
 /// </summary>
 /// <remarks>
-/// Both controls take their colors from the <c>--hlibz-control-*</c> tokens declared here with light
-/// values. They're declared under <c>:where(html)</c> (zero specificity), so the dark theme's
-/// <c>html</c> or <c>html[data-redoc-theme="dark"]</c> block overrides them.
+/// Both controls take their colors from the <c>--hlibz-control-*</c> tokens declared here with
+/// light values. They're declared under <c>:where(html)</c> (zero specificity), so the dark
+/// theme's <c>html</c> or <c>html[data-redoc-theme="dark"]</c> block overrides them.
 /// </remarks>
 internal static class ReDocToolbar
 {
@@ -38,7 +38,7 @@ internal static class ReDocToolbar
             if (!toolbar) {
               toolbar = document.createElement('div');
               toolbar.className = 'hlibz-toolbar';
-              // First in <body>, so on narrow screens (where it isn't fixed) it sits above the page.
+              // First in <body>: on narrow screens, where it isn't fixed, it sits above the page.
               document.body.insertBefore(toolbar, document.body.firstChild);
             }
             return toolbar;

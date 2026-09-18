@@ -11,8 +11,8 @@ namespace Hlibz.Redoc.AspNetCore.Extensions;
 public static class ReDocDocumentsBuilderExtensions
 {
     /// <summary>
-    /// Mounts one ReDoc page per document, by default at <c>/{RoutePrefix}/{Name}/</c>, each with a
-    /// picker for switching between them, and redirects <c>/{RoutePrefix}</c> to the first document.
+    /// Mounts one ReDoc page per document, by default at <c>/{RoutePrefix}/{Name}/</c>, each with
+    /// a picker for switching between them, and redirects <c>/{RoutePrefix}</c> to the first one.
     /// </summary>
     /// <param name="app">The application builder.</param>
     /// <param name="documents">The documents to mount, in picker order.</param>
@@ -42,8 +42,9 @@ public static class ReDocDocumentsBuilderExtensions
             [.. docs.Select(doc => new ReDocDocumentPage(doc, RouteOf(doc, prefix)))];
         ValidateRoutes(pages);
 
-        if (options.RedirectToFirstDocument
-            && !pages.Any(page => string.Equals(page.Route, prefix, StringComparison.OrdinalIgnoreCase)))
+        bool prefixIsAPage = pages.Any(
+            page => string.Equals(page.Route, prefix, StringComparison.OrdinalIgnoreCase));
+        if (options.RedirectToFirstDocument && !prefixIsAPage)
         {
             UseRedirect(app, prefix, pages[0].Route);
         }
@@ -66,7 +67,8 @@ public static class ReDocDocumentsBuilderExtensions
                         "Set ReDocDocument.Route instead, so the picker can link to the page.");
                 }
 
-                redoc.HeadContent = $"{redoc.HeadContent}\n{ReDocDocumentPicker.Build(pages, links, page)}";
+                string picker = ReDocDocumentPicker.Build(pages, links, page);
+                redoc.HeadContent = $"{redoc.HeadContent}\n{picker}";
             });
         }
 
@@ -144,14 +146,16 @@ public static class ReDocDocumentsBuilderExtensions
                 || page.Route.IndexOfAny(['?', '#', '\\']) >= 0)
             {
                 throw new ArgumentException(
-                    $"Route '{page.Route}' of document '{page.Document.Name}' must be a plain path.",
+                    $"Route '{page.Route}' of document '{page.Document.Name}' must be a plain " +
+                    "path.",
                     "documents");
             }
 
             if (!seen.Add(page.Route))
             {
                 throw new ArgumentException(
-                    $"Documents share the route '{page.Route}'; every page needs its own.", "documents");
+                    $"Documents share the route '{page.Route}'; every page needs its own.",
+                    "documents");
             }
         }
     }

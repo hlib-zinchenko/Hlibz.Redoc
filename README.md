@@ -1,9 +1,14 @@
 # Hlibz.Redoc.AspNetCore.Extensions
 
-A drop-in dark theme for [Redoc.AspNetCore](https://www.nuget.org/packages/Redoc.AspNetCore)'s
-ReDoc UI middleware — one line to fix a handful of colors ReDoc hardcodes outside its own theme
-config (scrollbar, selection, section captions, nested-schema backgrounds, sample-tab text), plus
-a full dark color palette.
+Add-ons for [Redoc.AspNetCore](https://www.nuget.org/packages/Redoc.AspNetCore)'s ReDoc UI
+middleware:
+
+- **Dark theme.** One line fixes the colors ReDoc hardcodes outside its own theme config
+  (scrollbar, selection, section captions, nested-schema backgrounds, sample-tab text) and adds a
+  full dark color palette.
+- **Light/System/Dark selector.** Viewers pick a theme, or follow their OS setting.
+- **Document picker.** Several OpenAPI documents, each on its own ReDoc page, with a dropdown to
+  switch between them, like Swagger UI's definition selector.
 
 [![CI](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/actions/workflows/ci.yml)
 [![NuGet](https://img.shields.io/nuget/v/Hlibz.Redoc.AspNetCore.Extensions.svg)](https://www.nuget.org/packages/Hlibz.Redoc.AspNetCore.Extensions)
@@ -24,6 +29,10 @@ all the AI needed to produce a proper dark ReDoc page.
 
 Then I figured I'm probably not the only one who wants dark API docs. So I moved the theme into
 this public repo and NuGet package for the community to use.
+
+Next I needed several OpenAPI documents in one app. Swagger UI has a dropdown for that, but ReDoc
+shows one spec per page. So the package got a document picker, and a broader name to go with it:
+it used to be `Hlibz.Redoc.AspNetCore.DarkTheme`.
 
 ## What it fixes
 
@@ -96,6 +105,63 @@ With the selector enabled, the dark CSS overrides are scoped under `html[data-re
 `AdditionalCss` is not scoped and applies to both themes, so prefix your rules with that selector
 if they should be dark-only.
 
+## Multiple OpenAPI documents
+
+`UseReDocDocuments` serves one ReDoc page per OpenAPI document, each with a picker in the top-right
+corner for switching between them. It works on its own, and alongside the dark theme and the theme
+selector:
+
+```csharp
+builder.Services.AddOpenApi("widgets");
+builder.Services.AddOpenApi("manufacturers");
+
+// ...
+
+app.MapOpenApi();
+app.UseReDocDocuments(
+    [
+        new ReDocDocument("widgets", "Widget Catalog"),
+        new ReDocDocument("manufacturers", "Manufacturers"),
+    ],
+    docs =>
+    {
+        docs.ConfigureReDoc = (redoc, _) =>
+            redoc.UseDarkTheme(theme => theme.EnableThemeSelector(defaultTheme: ReDocTheme.System));
+    });
+
+app.MapGet("/widgets", GetWidgets).WithGroupName("widgets");
+app.MapGet("/manufacturers", GetManufacturers).WithGroupName("manufacturers");
+```
+
+This serves `/api-docs/widgets/` and `/api-docs/manufacturers/`, and `/api-docs` redirects to the
+first one. Each document reads its spec from `/openapi/{documentName}.json`, which is where
+`MapOpenApi()` serves it.
+
+Tag every endpoint with `.WithGroupName(...)`. By default, an endpoint without a group name appears
+in every document.
+
+| `ReDocDocument` | |
+|---|---|
+| `Name` | The OpenAPI document name, as passed to `AddOpenApi(name)`. |
+| `DisplayName` | Label in the picker and the browser tab. Defaults to `Name`. |
+| `SpecUrl` | This document's spec URL, if it isn't at `SpecUrlTemplate`. |
+| `Route` | The page's path, e.g. `"reference/v2/taxes"`. Defaults to `{RoutePrefix}/{Name}`. |
+
+| `ReDocDocumentsOptions` | |
+|---|---|
+| `RoutePrefix` | Where pages go by default. Defaults to `"api-docs"`. |
+| `RedirectToFirstDocument` | Redirect `/{RoutePrefix}` to the first document. Defaults to `true`. |
+| `SpecUrlTemplate` | Defaults to `"/openapi/{documentName}.json"`. |
+| `Links` | Plain entries listed after the documents, e.g. `new ReDocLink("Swagger UI", "~/swagger")`. |
+| `ConfigureReDoc` | Runs for every page's `ReDocOptions`: theme, extra `HeadContent`, and so on. |
+
+Picker links are relative, so they keep working under a `PathBase` or behind a reverse proxy. A
+link URL that starts with `~/` is resolved the same way, against the app's base path. Other URLs
+are used as-is.
+
+To move a page, set its `Route`. Don't change `RoutePrefix` inside `ConfigureReDoc`: the pickers on
+the other pages would link to the old path, so `UseReDocDocuments` throws if you do.
+
 ## Install
 
 ```bash
@@ -108,8 +174,9 @@ dotnet add package Hlibz.Redoc.AspNetCore.Extensions
 dotnet run --project samples/Hlibz.Redoc.AspNetCore.Extensions.Sample
 ```
 
-This opens `http://localhost:5299` in your browser automatically — that's the screenshot above,
-live.
+This opens `http://localhost:5299` in your browser automatically. It redirects to
+`/api-docs/widgets/`, the page in the screenshot above, and the picker switches between the
+sample's three documents.
 
 ## Compatibility
 
@@ -123,8 +190,9 @@ live.
 
 If your site doesn't send a strict `Content-Security-Policy` header, skip this section.
 
-This package adds an inline `<style>`, plus an inline `<script>` when the theme selector is
-enabled, through `ReDocOptions.HeadContent`. A strict policy blocks inline tags that don't carry a
+This package adds inline tags through `ReDocOptions.HeadContent`: a `<style>` for the dark theme,
+a `<style>` and `<script>` for the theme selector, and a `<style>` and `<script>` for the document
+picker on every `UseReDocDocuments` page. A strict policy blocks inline tags that don't carry a
 nonce. The nonce recipe in the Redoc.AspNetCore README doesn't reach these tags, because it
 rewrites the `IndexStream` template, and the middleware only fills in `%(HeadContent)` after that.
 That recipe also misses Redoc.AspNetCore's own `<script type="text/javascript">` that calls
@@ -162,6 +230,10 @@ app.UseReDoc(options =>
     };
 });
 ```
+
+With `UseReDocDocuments`, put the same code in `ConfigureReDoc`. The picker's tags are appended
+to `HeadContent` after `ConfigureReDoc` runs, but the `IndexStream` above reads `HeadContent` per
+request, so they get the nonce too.
 
 ReDoc's bundle (2.0.0) also injects two static styles as it loads, and those can't take a nonce.
 Allow them by hash in `style-src`: `'sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU='` and

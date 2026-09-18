@@ -4,9 +4,11 @@ Guidance for Claude Code when working in this repository.
 
 ## What this is
 
-A small NuGet package: a dark theme for [Redoc.AspNetCore](https://www.nuget.org/packages/Redoc.AspNetCore)'s
-ReDoc UI middleware. It's pure presentation: a CSS string, a ReDoc theme config dictionary,
-and an optional theme-selector script.
+A small NuGet package of add-ons for [Redoc.AspNetCore](https://www.nuget.org/packages/Redoc.AspNetCore)'s
+ReDoc UI middleware: a dark theme (a CSS string plus a ReDoc theme config dictionary), an optional
+Light/System/Dark theme selector, and a document picker that serves several OpenAPI documents as
+ReDoc pages with a dropdown between them. Renamed from `Hlibz.Redoc.AspNetCore.DarkTheme`;
+`UseDarkTheme()` must keep behaving as it did there.
 
 ## Requires
 
@@ -33,9 +35,9 @@ needs `--project <path>` rather than a bare directory argument.
 
 ## Architecture
 
-- `src/Hlibz.Redoc.AspNetCore.Extensions/` — the library.
-  - `RedocOptionsExtensions.UseDarkTheme(this ReDocOptions, Action<DarkThemeOptions>?)` is the
-    single public entry point.
+- `src/Hlibz.Redoc.AspNetCore.Extensions/` — the library. Two public entry points:
+  `RedocOptionsExtensions.UseDarkTheme(this ReDocOptions, Action<DarkThemeOptions>?)` and
+  `ReDocDocumentsBuilderExtensions.UseReDocDocuments(this IApplicationBuilder, ...)`.
   - `DarkThemeOptions` — customization surface: `PrimaryColor`/`PrimaryColorLight`/
     `PrimaryColorDark`/`AdditionalCss`. Everything else in the palette (success/warning/error/
     grays/etc.) is intentionally fixed — this is a themed package, not a general theming engine.
@@ -53,16 +55,39 @@ needs `--project <path>` rather than a bare directory argument.
   - `ColorUtils` (internal) — simple HSL lighten/darken, used only when a caller supplies a
     custom `PrimaryColor` without also specifying explicit light/dark shades. The zero-config
     default path uses fixed, hand-picked values instead of the computed fallback.
+  - `UseReDocDocuments` mounts one `UseReDoc` page per `ReDocDocument`, configured by
+    `ReDocDocumentsOptions` (`RoutePrefix`, `RedirectToFirstDocument`, `SpecUrlTemplate`, `Links`,
+    `ConfigureReDoc`). `UseReDoc` runs its setup action immediately, so all routes are computed up
+    front (`ReDocDocumentPage`), and `ConfigureReDoc` may not change `RoutePrefix` (it throws).
+    Redoc.AspNetCore always serves a page at `{PathBase}/{route}/index.html`, so
+    `ReDocDocumentPicker` (internal) builds each page's hrefs relative to its own route depth
+    (`../` per segment). The hrefs need no PathBase and survive path-rewriting proxies. `~/` link URLs
+    resolve the same way. The picker JSON is embedded in a `<script>` and relies on
+    `JsonSerializer`'s default escaping. `DocumentTitle` is HTML-encoded because Redoc.AspNetCore
+    writes it into `<title>` raw.
+  - `ReDocToolbar` (internal) is the top-right container both the theme selector and the picker
+    append to, created on first use as the first child of `<body>`. Below 50rem (ReDoc's small
+    breakpoint), it drops out of `position: fixed` into the page flow so it doesn't cover the title.
+    It also declares the `--hlibz-control-*` color tokens (bg, border, fg, fg-hover, accent,
+    accent-fg) with light values under `:where(html)` (zero specificity).
+    `ReDocDarkThemeDefaults.BuildHeadContent` overrides them under the dark root selector, so both
+    controls follow the active theme without knowing which features are on.
 - `samples/Hlibz.Redoc.AspNetCore.Extensions.Sample/` — a minimal API used both as a runnable demo
-  and to produce the README screenshot. Its models are deliberately shaped to exercise the CSS
-  overrides in `ReDocDarkThemeDefaults`, not to model a realistic domain: `Widget` nests 5 levels
-  deep (`Manufacturer` → `Facility` → `GeoCoordinates` → `CoordinatePrecision` → `GeodeticDatum`)
-  to surface ReDoc's alternating nested-schema background bug, every endpoint documents a `500`
-  response alongside its own negative response (`400`/`404`) with a distinct model to check
+  and to produce the README screenshot (`/api-docs/widgets/`, dark via System). It serves 3
+  documents through `UseReDocDocuments`: `widgets`, `manufacturers` and `facilities`. Each is
+  registered with `AddOpenApi(name)`, and each endpoint is tagged with `.WithGroupName(name)`,
+  because untagged endpoints land in every document. It also shows a `~/` picker link. Its models
+  are deliberately shaped to exercise the CSS overrides in `ReDocDarkThemeDefaults`, not to model
+  a realistic domain: `Widget` nests 5 levels deep (`Manufacturer` → `Facility` →
+  `GeoCoordinates` → `CoordinatePrecision` → `GeodeticDatum`) to surface ReDoc's alternating
+  nested-schema background bug, every `widgets` endpoint documents a `500` response alongside its
+  own negative response (`400`/`404`) with a distinct model to check
   multiple response-schema/status-tab combinations render correctly, and every property carries a
   `[Description]` so field descriptions are visible everywhere.
 - `tests/Hlibz.Redoc.AspNetCore.Extensions.Tests/` — smoke tests on the built config
-  dictionary/head content shape; there's no real behavior beyond "did this get built correctly."
+  dictionary/head content shape. The `UseReDocDocuments` tests build a real pipeline with
+  `WebApplication.CreateSlimBuilder()` and request `/{route}/index.html`, so they check the picker
+  through the public API without `InternalsVisibleTo`.
 
 ## Releasing
 
