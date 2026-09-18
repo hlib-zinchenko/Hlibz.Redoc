@@ -85,6 +85,20 @@ public class RedocOptionsExtensionsTests
     }
 
     [Fact]
+    public void UseDarkTheme_WithThemeSelector_DeclaresLightAndDarkControlTokens()
+    {
+        ReDocOptions options = new();
+
+        options.UseDarkTheme(theme => theme.EnableThemeSelector());
+
+        // The selector's CSS has no fallbacks, so without the picker on the page these
+        // declarations are the only source of its colors.
+        Assert.Contains(":where(html) {", options.HeadContent);
+        Assert.Contains("--hlibz-control-accent: #32329f", options.HeadContent);
+        Assert.Contains("--hlibz-control-accent-fg: #09090b", options.HeadContent);
+    }
+
+    [Fact]
     public void UseDarkTheme_WithThemeSelector_StillShipsDarkThemeConfig()
     {
         ReDocOptions options = new();
