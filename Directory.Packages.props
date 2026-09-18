@@ -1,0 +1,13 @@
+<Project>
+    <PropertyGroup>
+        <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    </PropertyGroup>
+    <ItemGroup>
+        <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+        <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+        <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="8.0.0" />
+        <PackageVersion Include="Redoc.AspNetCore" Version="1.0.0" />
+        <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
+        <PackageVersion Include="xunit.v3" Version="4.0.1" />
+    </ItemGroup>
+</Project>

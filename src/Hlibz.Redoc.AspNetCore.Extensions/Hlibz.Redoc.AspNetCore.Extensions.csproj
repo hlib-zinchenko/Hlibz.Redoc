@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <PropertyGroup Label="NuGet metadata">
+    <PackageId>Hlibz.Redoc.AspNetCore.Extensions</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Hlib Zinchenko</Authors>
+    <Description>Add-ons for Redoc.AspNetCore's ReDoc UI middleware: a drop-in dark theme with an optional Light/System/Dark switcher and accent color customization, plus a document picker that serves multiple OpenAPI documents as ReDoc pages with a dropdown to switch between them, like Swagger UI's definition selector.</Description>
+    <PackageTags>redoc;openapi;swagger;aspnetcore;dark-theme;api-docs;documentation</PackageTags>
+    <PackageProjectUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Redoc.AspNetCore" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>
