@@ -19,6 +19,7 @@ app.UseReDocDocuments(
     docs =>
     {
         docs.RoutePrefix = "api-docs";
+        docs.Links.Add(new ReDocLink("Widgets OpenAPI JSON", "~/openapi/widgets.json"));
         docs.ConfigureReDoc = (redoc, _) =>
             redoc.UseDarkTheme(theme => theme.EnableThemeSelector(defaultTheme: ReDocTheme.System));
     });

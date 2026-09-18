@@ -15,33 +15,31 @@ internal static class ReDocThemeSelector
 {
     public const string DarkRootSelector = """html[data-redoc-theme="dark"]""";
 
-    public static string BuildCss(string primaryColor)
-    {
-        const string css = """
-              .hlibz-theme-selector {
-                display: flex; gap: 2px; padding: 3px; border-radius: 999px;
-                background: rgba(255, 255, 255, 0.92); border: 1px solid #d4d4d8;
-                box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-              }
-              .hlibz-theme-selector button {
-                display: inline-flex; align-items: center; justify-content: center;
-                width: 28px; height: 28px; padding: 0; border: 0; border-radius: 999px;
-                background: transparent; color: #52525b; cursor: pointer;
-              }
-              .hlibz-theme-selector button:hover { color: #18181b; }
-              .hlibz-theme-selector button[aria-pressed="true"] { background: #32329f; color: #ffffff; }
-              .hlibz-theme-selector button:focus-visible { outline: 2px solid #32329f; outline-offset: 1px; }
-              .hlibz-theme-selector svg { width: 16px; height: 16px; }
-              {{ROOT}} .hlibz-theme-selector { background: rgba(24, 24, 27, 0.92); border-color: #3f3f46; }
-              {{ROOT}} .hlibz-theme-selector button { color: #a1a1aa; }
-              {{ROOT}} .hlibz-theme-selector button:hover { color: #fafafa; }
-              {{ROOT}} .hlibz-theme-selector button[aria-pressed="true"] { background: {{PRIMARY}}; color: #09090b; }
-              {{ROOT}} .hlibz-theme-selector button:focus-visible { outline-color: {{PRIMARY}}; }
+    /// <summary>
+    /// The selector's CSS. Colors come from the <c>--hlibz-control-*</c> tokens in
+    /// <see cref="ReDocToolbar.Css"/>, which the dark theme overrides.
+    /// </summary>
+    public const string Css = """
+          .hlibz-theme-selector {
+            display: flex; flex: none; gap: 2px; padding: 3px; border-radius: 999px;
+            background: var(--hlibz-control-bg); border: 1px solid var(--hlibz-control-border);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+          }
+          .hlibz-theme-selector button {
+            display: inline-flex; align-items: center; justify-content: center;
+            width: 28px; height: 28px; padding: 0; border: 0; border-radius: 999px;
+            background: transparent; color: var(--hlibz-control-fg); cursor: pointer;
+          }
+          .hlibz-theme-selector button:hover { color: var(--hlibz-control-fg-hover); }
+          .hlibz-theme-selector button[aria-pressed="true"] {
+            background: var(--hlibz-control-accent); color: var(--hlibz-control-accent-fg);
+          }
+          .hlibz-theme-selector button:focus-visible {
+            outline: 2px solid var(--hlibz-control-accent); outline-offset: 1px;
+          }
+          .hlibz-theme-selector svg { width: 16px; height: 16px; }
 
-            """;
-
-        return (ReDocToolbar.Css + css).Replace("{{ROOT}}", DarkRootSelector).Replace("{{PRIMARY}}", primaryColor);
-    }
+        """;
 
     public static string BuildScript(ReDocTheme defaultTheme)
     {

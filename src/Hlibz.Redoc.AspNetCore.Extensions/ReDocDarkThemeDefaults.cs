@@ -67,19 +67,19 @@ internal static class ReDocDarkThemeDefaults
 
         head.Append("<style>\n").Append(darkCss.Replace("{{ROOT}}", root));
 
-        // Tokens for this package's floating controls (currently the document picker), which fall
-        // back to light colors when the dark theme isn't active.
+        // Dark values for the tokens this package's controls (theme selector, document picker) use.
+        // ReDocToolbar.Css declares their light values with lower specificity.
         head.Append($$"""
               {{root}} {
                 --hlibz-control-bg: rgba(24, 24, 27, 0.92); --hlibz-control-border: #3f3f46;
                 --hlibz-control-fg: #a1a1aa; --hlibz-control-fg-hover: #fafafa;
-                --hlibz-control-accent: {{theme.PrimaryColor}};
+                --hlibz-control-accent: {{theme.PrimaryColor}}; --hlibz-control-accent-fg: #09090b;
               }
 
             """);
         if (theme.ThemeSelectorEnabled)
         {
-            head.Append(ReDocThemeSelector.BuildCss(theme.PrimaryColor));
+            head.Append(ReDocToolbar.Css).Append(ReDocThemeSelector.Css);
         }
 
         head.Append(additionalCssBlock).Append("</style>");

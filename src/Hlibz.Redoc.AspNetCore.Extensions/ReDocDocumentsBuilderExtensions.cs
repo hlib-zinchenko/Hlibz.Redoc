@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Redoc.AspNetCore;
@@ -10,12 +11,14 @@ namespace Hlibz.Redoc.AspNetCore.Extensions;
 public static class ReDocDocumentsBuilderExtensions
 {
     /// <summary>
-    /// Mounts one ReDoc page per document at <c>/{RoutePrefix}/{Name}/</c>, each with a picker
-    /// for switching between them, and redirects <c>/{RoutePrefix}</c> to the first document.
+    /// Mounts one ReDoc page per document, by default at <c>/{RoutePrefix}/{Name}/</c>, each with a
+    /// picker for switching between them, and redirects <c>/{RoutePrefix}</c> to the first document.
     /// </summary>
     /// <param name="app">The application builder.</param>
     /// <param name="documents">The documents to mount, in picker order.</param>
-    /// <param name="configure">Optional route, spec URL, and per-page ReDoc configuration.</param>
+    /// <param name="configure">
+    /// Optional route, redirect, spec URL, extra links, and per-page ReDoc configuration.
+    /// </param>
     /// <returns>The same <paramref name="app"/> instance, for chaining.</returns>
     public static IApplicationBuilder UseReDocDocuments(
         this IApplicationBuilder app,
@@ -28,42 +31,79 @@ public static class ReDocDocumentsBuilderExtensions
         ReDocDocumentsOptions options = new();
         configure?.Invoke(options);
 
-        IReadOnlyList<ReDocDocument> docs = [.. documents];
-        Validate(docs);
-
         string prefix = options.RoutePrefix.Trim('/');
-        string root = prefix.Length == 0 ? string.Empty : $"/{prefix}";
-        string firstPage = $"{root}/{docs[0].Name}/";
+        IReadOnlyList<ReDocDocument> docs = [.. documents];
+        IReadOnlyList<ReDocLink> links = [.. options.Links];
+        Validate(docs, links);
 
-        app.Use((context, next) =>
+        // UseReDoc runs its setup action right away, so every page's route has to be known before
+        // the first one is built: each picker links to all of them.
+        IReadOnlyList<ReDocDocumentPage> pages =
+            [.. docs.Select(doc => new ReDocDocumentPage(doc, RouteOf(doc, prefix)))];
+        ValidateRoutes(pages);
+
+        if (options.RedirectToFirstDocument
+            && !pages.Any(page => string.Equals(page.Route, prefix, StringComparison.OrdinalIgnoreCase)))
         {
-            string path = context.Request.Path.Value ?? string.Empty;
-            if (HttpMethods.IsGet(context.Request.Method) && (path == root || path == $"{root}/"))
-            {
-                context.Response.Redirect($"{context.Request.PathBase}{firstPage}");
-                return Task.CompletedTask;
-            }
+            UseRedirect(app, prefix, pages[0].Route);
+        }
 
-            return next(context);
-        });
-
-        foreach (ReDocDocument doc in docs)
+        foreach (ReDocDocumentPage page in pages)
         {
             app.UseReDoc(redoc =>
             {
-                redoc.RoutePrefix = prefix.Length == 0 ? doc.Name : $"{prefix}/{doc.Name}";
-                redoc.SpecUrl(
-                    doc.SpecUrl ?? options.SpecUrlTemplate.Replace("{documentName}", doc.Name));
-                redoc.DocumentTitle = doc.DisplayName ?? doc.Name;
-                options.ConfigureReDoc?.Invoke(redoc, doc);
-                redoc.HeadContent = $"{redoc.HeadContent}\n{ReDocDocumentPicker.Build(docs, doc)}";
+                redoc.RoutePrefix = page.Route;
+                redoc.SpecUrl(page.Document.SpecUrl
+                    ?? options.SpecUrlTemplate.Replace("{documentName}", page.Document.Name));
+                // Redoc.AspNetCore writes the title into <title> as-is.
+                redoc.DocumentTitle =
+                    WebUtility.HtmlEncode(page.Document.DisplayName ?? page.Document.Name);
+                options.ConfigureReDoc?.Invoke(redoc, page.Document);
+                if (!string.Equals(redoc.RoutePrefix, page.Route, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        $"ConfigureReDoc changed RoutePrefix for document '{page.Document.Name}'. " +
+                        "Set ReDocDocument.Route instead, so the picker can link to the page.");
+                }
+
+                redoc.HeadContent = $"{redoc.HeadContent}\n{ReDocDocumentPicker.Build(pages, links, page)}";
             });
         }
 
         return app;
     }
 
-    private static void Validate(IReadOnlyList<ReDocDocument> docs)
+    private static string RouteOf(ReDocDocument doc, string prefix)
+    {
+        if (doc.Route is not null)
+        {
+            return doc.Route.Trim('/');
+        }
+
+        return prefix.Length == 0 ? doc.Name : $"{prefix}/{doc.Name}";
+    }
+
+    private static void UseRedirect(IApplicationBuilder app, string prefix, string firstRoute)
+    {
+        string root = prefix.Length == 0 ? string.Empty : $"/{prefix}";
+        string target = firstRoute.Length == 0 ? "/" : $"/{firstRoute}/";
+
+        app.Use((context, next) =>
+        {
+            string path = context.Request.Path.Value ?? string.Empty;
+            if (HttpMethods.IsGet(context.Request.Method)
+                && (string.Equals(path, root, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(path, $"{root}/", StringComparison.OrdinalIgnoreCase)))
+            {
+                context.Response.Redirect($"{context.Request.PathBase}{target}");
+                return Task.CompletedTask;
+            }
+
+            return next(context);
+        });
+    }
+
+    private static void Validate(IReadOnlyList<ReDocDocument> docs, IReadOnlyList<ReDocLink> links)
     {
         if (docs.Count == 0)
         {
@@ -82,6 +122,36 @@ public static class ReDocDocumentsBuilderExtensions
             if (!seen.Add(doc.Name))
             {
                 throw new ArgumentException($"Duplicate document name '{doc.Name}'.", "documents");
+            }
+        }
+
+        foreach (ReDocLink link in links)
+        {
+            if (string.IsNullOrWhiteSpace(link.Label) || string.IsNullOrWhiteSpace(link.Url))
+            {
+                throw new ArgumentException(
+                    "Every picker link needs a non-empty label and URL.", "configure");
+            }
+        }
+    }
+
+    private static void ValidateRoutes(IReadOnlyList<ReDocDocumentPage> pages)
+    {
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        foreach (ReDocDocumentPage page in pages)
+        {
+            if (page.Route.Contains("//", StringComparison.Ordinal)
+                || page.Route.IndexOfAny(['?', '#', '\\']) >= 0)
+            {
+                throw new ArgumentException(
+                    $"Route '{page.Route}' of document '{page.Document.Name}' must be a plain path.",
+                    "documents");
+            }
+
+            if (!seen.Add(page.Route))
+            {
+                throw new ArgumentException(
+                    $"Documents share the route '{page.Route}'; every page needs its own.", "documents");
             }
         }
     }
