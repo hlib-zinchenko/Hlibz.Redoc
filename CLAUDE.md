@@ -23,7 +23,7 @@ dotnet build
 # Run all tests
 dotnet test --project tests/Hlibz.Redoc.AspNetCore.Extensions.Tests
 
-# Run the sample app (opens http://localhost:5299 automatically, see launchSettings.json)
+# Run the sample app (opens http://localhost:5299/api-docs automatically, see launchSettings.json)
 dotnet run --project samples/Hlibz.Redoc.AspNetCore.Extensions.Sample
 
 # Pack the library locally

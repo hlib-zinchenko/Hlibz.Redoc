@@ -174,7 +174,7 @@ dotnet add package Hlibz.Redoc.AspNetCore.Extensions
 dotnet run --project samples/Hlibz.Redoc.AspNetCore.Extensions.Sample
 ```
 
-This opens `http://localhost:5299` in your browser automatically. It redirects to
+This opens `http://localhost:5299/api-docs` in your browser automatically. It redirects to
 `/api-docs/widgets/`, the page in the screenshot above, and the picker switches between the
 sample's three documents.
 
