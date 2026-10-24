@@ -1,3 +1,5 @@
+![Hlibz.Redoc.AspNetCore.Extensions icon](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/main/docs/icon.png)
+
 # Hlibz.Redoc.AspNetCore.Extensions
 
 Add-ons for [Redoc.AspNetCore](https://www.nuget.org/packages/Redoc.AspNetCore)'s ReDoc UI
