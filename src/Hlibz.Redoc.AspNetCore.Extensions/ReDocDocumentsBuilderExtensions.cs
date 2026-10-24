@@ -41,6 +41,7 @@ public static class ReDocDocumentsBuilderExtensions
         IReadOnlyList<ReDocDocumentPage> pages =
             [.. docs.Select(doc => new ReDocDocumentPage(doc, RouteOf(doc, prefix)))];
         ValidateRoutes(pages);
+        ValidateDocumentNames(app, pages, options);
 
         bool prefixIsAPage = pages.Any(
             page => string.Equals(page.Route, prefix, StringComparison.OrdinalIgnoreCase));
@@ -54,8 +55,7 @@ public static class ReDocDocumentsBuilderExtensions
             app.UseReDoc(redoc =>
             {
                 redoc.RoutePrefix = page.Route;
-                redoc.SpecUrl(page.Document.SpecUrl
-                    ?? options.SpecUrlTemplate.Replace("{documentName}", page.Document.Name));
+                redoc.SpecUrl(SpecUrlOf(page.Document, options));
                 // Redoc.AspNetCore writes the title into <title> as-is.
                 redoc.DocumentTitle =
                     WebUtility.HtmlEncode(page.Document.DisplayName ?? page.Document.Name);
@@ -83,6 +83,11 @@ public static class ReDocDocumentsBuilderExtensions
         }
 
         return prefix.Length == 0 ? doc.Name : $"{prefix}/{doc.Name}";
+    }
+
+    private static string SpecUrlOf(ReDocDocument doc, ReDocDocumentsOptions options)
+    {
+        return doc.SpecUrl ?? options.SpecUrlTemplate.Replace("{documentName}", doc.Name);
     }
 
     private static void UseRedirect(IApplicationBuilder app, string prefix, string firstRoute)
@@ -135,6 +140,61 @@ public static class ReDocDocumentsBuilderExtensions
                     "Every picker link needs a non-empty label and URL.", "configure");
             }
         }
+    }
+
+    /// <summary>
+    /// Fails fast when a document name doesn't match any registered OpenAPI document. The page
+    /// would otherwise mount fine and the app start clean, because only the browser's spec
+    /// request 404s — so the mistake would surface in ReDoc's error screen and nowhere else.
+    /// </summary>
+    private static void ValidateDocumentNames(
+        IApplicationBuilder app,
+        IReadOnlyList<ReDocDocumentPage> pages,
+        ReDocDocumentsOptions options)
+    {
+        // Without the placeholder, names don't drive spec URLs, so there is nothing to check.
+        if (!options.ValidateDocumentNames
+            || !options.SpecUrlTemplate.Contains("{documentName}", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        // A document with an explicit SpecUrl says where its spec is, whoever serves it.
+        ReDocDocumentPage[] checkable =
+            [.. pages.Where(page => page.Document.SpecUrl is null)];
+        if (checkable.Length == 0)
+        {
+            return;
+        }
+
+        HashSet<string>? registered = OpenApiDocumentNames.TryResolve(app.ApplicationServices);
+        if (registered is null)
+        {
+            return;
+        }
+
+        ReDocDocumentPage[] missing =
+            [.. checkable.Where(page => !registered.Contains(page.Document.Name))];
+        if (missing.Length == 0)
+        {
+            return;
+        }
+
+        IEnumerable<string> details = missing.Select(page =>
+            $"  - '{page.Document.Name}': page '/{page.Route}/' would load an empty spec from " +
+            $"'{SpecUrlOf(page.Document, options)}'.");
+        string names = string.Join(", ", registered.Order().Select(name => $"'{name}'"));
+        string known = registered.Count == 0
+            ? "No OpenAPI documents are registered."
+            : $"Registered documents: {names}.";
+
+        throw new InvalidOperationException(
+            "UseReDocDocuments was given OpenAPI document names that aren't registered:\n"
+            + string.Join('\n', details) + '\n' + known + '\n'
+            + "Fix the name, register the document with AddOpenApi(name) or Swashbuckle's "
+            + "SwaggerDoc(name, ...), set ReDocDocument.SpecUrl if its spec is served from "
+            + "somewhere else, or set ReDocDocumentsOptions.ValidateDocumentNames = false to skip "
+            + "this check.");
     }
 
     private static void ValidateRoutes(IReadOnlyList<ReDocDocumentPage> pages)

@@ -65,6 +65,19 @@ needs `--project <path>` rather than a bare directory argument.
     resolve the same way. The picker JSON is embedded in a `<script>` and relies on
     `JsonSerializer`'s default escaping. `DocumentTitle` is HTML-encoded because Redoc.AspNetCore
     writes it into `<title>` raw.
+  - `OpenApiDocumentNames` (internal) backs `ReDocDocumentsOptions.ValidateDocumentNames` (on by
+    default): a configured name that isn't a registered OpenAPI document throws at startup instead
+    of serving a page whose spec 404s. It resolves the *internal*
+    `Microsoft.Extensions.ApiDescriptions.IDocumentProvider` by type name across loaded assemblies
+    and unions every `GetDocumentNames()`, which covers both `Microsoft.AspNetCore.OpenApi` and
+    Swashbuckle (and NSwag) in one lookup. The interface is internal by design — `dotnet
+    getdocument` resolves it by name too — so reflection is the only option even on net9/net10, and
+    multi-targeting wouldn't help. Returning `null` rather than an empty set when no provider
+    resolves is what keeps "can't verify" from throwing; every reflection step is wrapped per
+    assembly for the same reason. Matching is case-insensitive because `MapOpenApi` lowercases the
+    requested name before its lookup. Documents with an explicit `SpecUrl`, and all documents when
+    `SpecUrlTemplate` has no `{documentName}`, are skipped: only names that actually build a spec
+    URL are checked.
   - `ReDocToolbar` (internal) is the top-right container both the theme selector and the picker
     append to, created on first use as the first child of `<body>`. Below 50rem (ReDoc's small
     breakpoint), it drops out of `position: fixed` into the page flow so it doesn't cover the title.
@@ -87,7 +100,12 @@ needs `--project <path>` rather than a bare directory argument.
 - `tests/Hlibz.Redoc.AspNetCore.Extensions.Tests/` — smoke tests on the built config
   dictionary/head content shape. The `UseReDocDocuments` tests build a real pipeline with
   `WebApplication.CreateSlimBuilder()` and request `/{route}/index.html`, so they check the picker
-  through the public API without `InternalsVisibleTo`.
+  through the public API without `InternalsVisibleTo`. This project overrides `TargetFramework` to
+  `net10.0` and references `Microsoft.AspNetCore.OpenApi` and `Swashbuckle.AspNetCore.SwaggerGen`
+  (test-only) so the document-name check runs against the real providers — the type and method
+  names it resolves by string are the fragile part, and a stand-in wouldn't protect them. The
+  library under test is still its `net8.0` assembly. Swashbuckle must be ≥ 10.x: 9.x pins
+  Microsoft.OpenApi 1.x, which collides with what `Microsoft.AspNetCore.OpenApi` 10.x brings in.
 
 ## Releasing
 

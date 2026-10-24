@@ -154,6 +154,7 @@ in every document.
 | `RoutePrefix` | Where pages go by default. Defaults to `"api-docs"`. |
 | `RedirectToFirstDocument` | Redirect `/{RoutePrefix}` to the first document. Defaults to `true`. |
 | `SpecUrlTemplate` | Defaults to `"/openapi/{documentName}.json"`. |
+| `ValidateDocumentNames` | Check at startup that every name is a registered document. Defaults to `true`. |
 | `Links` | Plain entries listed after the documents, e.g. `new ReDocLink("Swagger UI", "~/swagger")`. |
 | `ConfigureReDoc` | Runs for every page's `ReDocOptions`: theme, extra `HeadContent`, and so on. |
 
@@ -163,6 +164,28 @@ are used as-is.
 
 To move a page, set its `Route`. Don't change `RoutePrefix` inside `ConfigureReDoc`: the pickers on
 the other pages would link to the old path, so `UseReDocDocuments` throws if you do.
+
+### Mistyped document names fail at startup
+
+The list above has to mirror your `AddOpenApi(name)` calls. When the two drift, the page itself
+still serves fine and only its spec request 404s — so the app starts clean, the server log says
+nothing, and the mistake surfaces only when someone opens the page and finds ReDoc's "Something
+went wrong…". `UseReDocDocuments` checks the names at startup instead and throws:
+
+```
+UseReDocDocuments was given OpenAPI document names that aren't registered:
+  - 'wigets': page '/api-docs/wigets/' would load an empty spec from '/openapi/wigets.json'.
+Registered documents: 'facilities', 'manufacturers', 'widgets'.
+```
+
+Both `AddOpenApi(name)` and Swashbuckle's `SwaggerDoc(name, ...)` are recognized, matched the same
+way `MapOpenApi` matches them — case-insensitively. A document is only checked when its name
+actually builds its spec URL, so a document with its own `SpecUrl`, or any document when
+`SpecUrlTemplate` has no `{documentName}`, is left alone. Nothing is checked at all if the app
+registers no OpenAPI document provider the check recognizes.
+
+Set `ValidateDocumentNames = false` if your specs come from somewhere the check can't see, e.g.
+static files served alongside documents you do register.
 
 ## Install
 
