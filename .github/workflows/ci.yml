@@ -36,11 +36,18 @@ jobs:
       - name: Test Swashbuckle adapter
         run: dotnet test --project tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests --no-build --configuration Release
 
+      # Our own host doesn't share the conformance source: it has no ReDocOptions, no
+      # HeadContent and no IndexStream to assert against. Its suite starts a real server,
+      # because endpoint routing doesn't match in a hand-built pipeline.
+      - name: Test our host
+        run: dotnet test --project tests/Hlibz.Redoc.AspNetCore.Tests --no-build --configuration Release
+
       - name: Pack
         run: |
           dotnet pack src/Hlibz.Redoc.Extensions --no-build --configuration Release --output ./artifacts
           dotnet pack src/Hlibz.Redoc.Extensions.RedocAspNetCore --no-build --configuration Release --output ./artifacts
           dotnet pack src/Hlibz.Redoc.Extensions.Swashbuckle --no-build --configuration Release --output ./artifacts
+          dotnet pack src/Hlibz.Redoc.AspNetCore --no-build --configuration Release --output ./artifacts
 
       # The README and icon nuget.org shows: at the package root and referenced by the nuspec,
       # since dropping PackageIcon or PackageReadmeFile still packs.
@@ -58,14 +65,34 @@ jobs:
           done
 
       # Core carrying a host package would defeat the split: adapters exist so a consumer
-      # downloads one embedded ReDoc bundle, not every host's.
+      # downloads one embedded ReDoc bundle, not every host's. Our own host must not carry one
+      # either — it is a host, and it ships its own bundle.
       # Match the dependency element, not a bare name: the repository URL contains
       # "Redoc.AspNetCore" too, so a plain grep over the nuspec always matches.
-      - name: Core has no host dependency
+      - name: Core and our host have no host dependency
         run: |
-          unzip -p ./artifacts/Hlibz.Redoc.Extensions.[0-9]*.nupkg '*.nuspec' > core.nuspec
-          cat core.nuspec
-          if grep -qE '<dependency id="(Redoc\.AspNetCore|Swashbuckle)' core.nuspec; then
-            echo "::error::Hlibz.Redoc.Extensions must not depend on a ReDoc host package."
+          for id in Hlibz.Redoc.Extensions Hlibz.Redoc.AspNetCore; do
+            unzip -p ./artifacts/$id.[0-9]*.nupkg '*.nuspec' > package.nuspec
+            echo "== $id"
+            cat package.nuspec
+            if grep -qE '<dependency id="(Redoc\.AspNetCore|Swashbuckle)' package.nuspec; then
+              echo "::error::$id must not depend on a ReDoc host package."
+              exit 1
+            fi
+          done
+
+      # The bundle is what this package is for, and it is easy to lose: an EmbeddedResource that
+      # stops matching its file silently produces a package that 500s on first request.
+      - name: Our host carries the ReDoc bundle and its licence
+        run: |
+          pkg=$(ls ./artifacts/Hlibz.Redoc.AspNetCore.[0-9]*.nupkg)
+          unzip -l "$pkg" > host-contents.txt
+          cat host-contents.txt
+          grep -qE " THIRD-PARTY-NOTICES\.txt$" host-contents.txt
+          size=$(unzip -p "$pkg" 'lib/*/Hlibz.Redoc.AspNetCore.dll' | wc -c)
+          echo "assembly is $size bytes"
+          # The embedded bundle is ~650 KB; an assembly this small can't be carrying it.
+          if [ "$size" -lt 500000 ]; then
+            echo "::error::Hlibz.Redoc.AspNetCore looks like it lost its embedded ReDoc bundle."
             exit 1
           fi

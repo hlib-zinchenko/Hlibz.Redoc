@@ -8,14 +8,25 @@ Add-ons for ReDoc UI middleware: a dark theme (a CSS string plus a ReDoc theme c
 an optional Light/System/Dark theme selector, and a document picker that serves several OpenAPI
 documents as ReDoc pages with a dropdown between them.
 
-As of v2 this is **three packages**, not one. `Hlibz.Redoc.Extensions` is the host-agnostic engine;
+As of v2 this is **four packages**, not one. `Hlibz.Redoc.Extensions` is the host-agnostic engine;
 `Hlibz.Redoc.Extensions.RedocAspNetCore` and `Hlibz.Redoc.Extensions.Swashbuckle` are the adapters
 that wire it to [Redoc.AspNetCore](https://www.nuget.org/packages/Redoc.AspNetCore)'s and
 [Swashbuckle.AspNetCore.ReDoc](https://www.nuget.org/packages/Swashbuckle.AspNetCore.ReDoc)'s
-`ReDocOptions`. The split exists because `Redoc.AspNetCore` is effectively abandoned while
-Swashbuckle's has ~300× the downloads, and a package that extends one host's `ReDocOptions` type can
-never serve the other. Adapters have to be separate packages: NuGet has no optional dependencies, so
-one package referencing both hosts would make every consumer download two embedded ReDoc bundles.
+`ReDocOptions`; `Hlibz.Redoc.AspNetCore` is our own host, which embeds ReDoc itself and owes
+neither of them anything. The adapter split exists because `Redoc.AspNetCore` is effectively
+abandoned while Swashbuckle's has ~300× the downloads, and a package that extends one host's
+`ReDocOptions` type can never serve the other. Adapters have to be separate packages: NuGet has no
+optional dependencies, so one package referencing both hosts would make every consumer download two
+embedded ReDoc bundles.
+
+**The two products, and where the line is.** The adapters are the *dark theme* for ReDoc 2.x, which
+is what both existing hosts are frozen on (2.0.0 and 2.5.4). Our own host ships **ReDoc 3**, which
+themes itself through ~2,900 CSS custom properties and has dark mode, a color-mode toggle and system
+fonts built in — so the dark theme, the theme selector and the whole fonts feature are inert or
+redundant there, and `UseDarkTheme` is not part of its surface at all. What the host adds instead is
+everything the hosts can't do: per-page authorization through endpoint routing, a page with nothing
+inline, `immutable` cache headers, and the picker. `V2-PHASE3.md` records how that was decided and
+what was measured; don't reintroduce the theme to the host without reading it.
 
 Lineage, and the compatibility it obliges: `Hlibz.Redoc.AspNetCore.DarkTheme` →
 `Hlibz.Redoc.AspNetCore.Extensions` → `Hlibz.Redoc.Extensions.RedocAspNetCore`. `UseDarkTheme()`
@@ -39,19 +50,22 @@ one adapter is the supported case; don't "fix" this by renaming types apart.
 # Build everything
 dotnet build
 
-# Run the tests — three suites: core, then the shared conformance source per adapter
+# Run the tests — four suites: core, the shared conformance source per adapter, then our host
 dotnet test --project tests/Hlibz.Redoc.Extensions.Tests
 dotnet test --project tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests
 dotnet test --project tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests
+dotnet test --project tests/Hlibz.Redoc.AspNetCore.Tests
 
 # Run the sample apps (each opens /api-docs automatically, see launchSettings.json)
 dotnet run --project samples/Sample.RedocAspNetCore   # :5299
 dotnet run --project samples/Sample.Swashbuckle       # :5399
+dotnet run --project samples/Sample.Own               # :5499
 
-# Pack all three packages locally
+# Pack all four packages locally
 dotnet pack src/Hlibz.Redoc.Extensions -c Release -o ./nupkg
 dotnet pack src/Hlibz.Redoc.Extensions.RedocAspNetCore -c Release -o ./nupkg
 dotnet pack src/Hlibz.Redoc.Extensions.Swashbuckle -c Release -o ./nupkg
+dotnet pack src/Hlibz.Redoc.AspNetCore -c Release -o ./nupkg
 ```
 
 Test projects use Microsoft Testing Platform (`test.runner` in `global.json`), so `dotnet test`
@@ -84,6 +98,49 @@ takes one project at a time.
     `index.js`: raw JSON, not a JS string literal, so `ReDocFonts`' no-`\uXXXX` rule buys nothing
     here. **Keep it anyway** — a font stack that worked on one host and threw on the other would be
     worse than one that is uniformly strict.
+  - A third host difference, in behaviour rather than in code: under `style-src 'self' 'nonce-…'`
+    with `window.__webpack_nonce__` set, redoc **2.0.0 renders** (only two static inline styles are
+    blocked, and the README gives their hashes) while **2.5.4 dies** with styled-components error
+    #17 — its bundle doesn't contain `__webpack_nonce__` at all. Both measured in a browser. The
+    README therefore recommends `style-src 'unsafe-inline'` as the portable answer and puts the
+    nonce on `script-src` only; don't collapse that back into one claim covering both hosts.
+- `src/Hlibz.Redoc.AspNetCore/` — **our own host**: it embeds ReDoc and serves its own page, so it
+  references no host package, only core. Public surface is `MapReDocDocuments` (endpoint routing,
+  returning a convention builder over every endpoint it adds, so `.RequireAuthorization()` reaches
+  the whole page) plus a `UseReDocDocuments` middleware form for an app without routing, and
+  `ReDocDocumentsOptions : ReDocDocumentsOptionsBase` — same type name as the adapters', different
+  members, because this host has no `ReDocOptions` to hand to a `ConfigureReDoc` callback.
+  - `assets/redoc.standalone.js.gz` is the ReDoc bundle, **checked in gzipped and served that way**.
+    No Node, no `npm`, no build-time download: `assets/README.md` records the version, the npm
+    tarball integrity and the upgrade steps, and `ReDocBundle.Version` must match it (a test
+    asserts the bundle itself carries the string). `gzip -n` on upgrade, or the file differs on
+    every run.
+  - `ReDocPage` (internal) builds the markup, the stylesheet, `redoc-init.js` and
+    `redoc-colormode.js`. **Nothing is inline** — not the config, not the picker, not the
+    color-mode bootstrap — which is the entire reason to own the template: `script-src 'self'`
+    holds with no nonce. `style-src 'unsafe-inline'` is still unavoidable (styled-components
+    injects rules at runtime, and setting `__webpack_nonce__` does not reach it on redoc 2.5.4 or
+    3.0.1 — measured, both die with a blank page). Don't advertise nonce support.
+  - The color mode is stamped on `<html>` server-side when it's known, and `redoc-colormode.js`
+    does the rest from `localStorage['redoc.colorMode']` — ReDoc 3's own key. ReDoc does this with
+    an *inline* script, which a strict CSP blocks, so without this the page renders light for a
+    moment.
+  - `ReDocSite` (internal) is everything worked out at startup: one `ReDocSitePage` per document
+    holding its finished markup and files. Nothing is built per request, because nothing varies
+    per request.
+  - The bundle is served once for the whole site at `{RoutePrefix}/_redoc/`, and each page's
+    `redoc-init.js` imports it by a relative href (`ReDocRelativePath`), so one cached copy serves
+    every page and the URLs survive a path-rewriting proxy. `Cache-Control: immutable` for a year
+    plus a strong ETag: Redoc.AspNetCore sends 1 MB uncompressed with no `Cache-Control` at all,
+    Swashbuckle sends `max-age=0`.
+  - A route pattern ignores its trailing slash, so `{route}/` and `{route}` are **one endpoint**,
+    not two — mapping both throws `AmbiguousMatchException`. The handler checks the path itself and
+    302s when the slash is missing, because serving the page there would leave every relative href
+    resolving one folder up.
+  - `ReDocPage.ConfigJson` writes the config with `Utf8JsonWriter`, never `JsonSerializer`: a slim
+    or AOT host has reflection-based serialization off. `AdditionalConfigJson` is the escape hatch
+    for ReDoc options this package doesn't surface, validated where it's set rather than on the
+    page.
 - `src/Hlibz.Redoc.Extensions/` — core: everything that doesn't touch a host's `ReDocOptions`.
   It keeps `FrameworkReference Microsoft.AspNetCore.App` but references no host package — ASP.NET
   is common ground to every host, so document validation, route computation and the prefix redirect
@@ -102,7 +159,13 @@ takes one project at a time.
     host: `Validate`/`ValidateRoutes`/`RouteOf`, the document-name check, the prefix redirect, and
     per-page `SpecUrlOf`/`DocumentTitleOf`/`PickerFor`. Its exception messages and `paramName`s
     name the *public extension method's* parameters (`"documents"`, `"configure"`), not its own —
-    they moved verbatim and tests assert on them.
+    they moved verbatim and tests assert on them. Two `Build` overloads: the `IApplicationBuilder`
+    one registers the prefix redirect as middleware for the adapters, the `IServiceProvider` one
+    returns it as a `ReDocPrefixRedirect` for a host that maps its own endpoints.
+  - `ReDocDocumentPicker` exposes its `Css` and `BuildScript` separately from `Build`, because the
+    adapters can only inline them through `HeadContent` while our host serves them as files. The
+    adapters' output is byte-identical either way — it was diffed against the previous commit's
+    served pages on both hosts, which is the standard any change in here should meet.
   - `DarkThemeOptions` — customization surface: `PrimaryColor`/`PrimaryColorLight`/
     `PrimaryColorDark`/`AdditionalCss`, plus the font, `Favicon` and `PrintStyles` settings below.
     Everything else in the palette (success/warning/error/grays/etc.) is intentionally fixed —
@@ -185,6 +248,10 @@ takes one project at a time.
   `[Description]` so field descriptions are visible everywhere. It's a plain `Microsoft.NET.Sdk`
   library, so the minimal-API extension methods the web-SDK samples get implicitly are imported by
   hand.
+- `samples/Sample.Own/` (:5499) — the same shared documents on our own host. Its `Program.cs` sets
+  the verified Content-Security-Policy itself, so the sample proves the policy rather than the
+  README asserting it. It can't be line-for-line identical to the other two: there is no
+  `UseDarkTheme` here and the mapping call is `MapReDocDocuments`.
 - `samples/Sample.RedocAspNetCore/` (:5299) and `samples/Sample.Swashbuckle/` (:5399) — the same
   app on each host, used as runnable demos and to produce the README screenshot
   (`/api-docs/widgets/`, dark via System, from the 5299 one). Their `Program.cs` files are
@@ -212,6 +279,12 @@ takes one project at a time.
     assertion. This is the permanent replacement for phase 1's throwaway "capture every string
     before and after and diff it" harness — the head content is one large string, and a lost
     newline passes every `Contains` assertion.
+- `tests/Hlibz.Redoc.AspNetCore.Tests/` — our host's own suite. It does **not** share
+  `tests/Conformance`: those assertions are all `ReDocOptions`, `ConfigObject.AdditionalItems`,
+  `HeadContent` and `IndexStream`, four concepts this host doesn't have. It starts a real Kestrel
+  on port 0 (`ReDocTestApp`) because **endpoint routing matches nothing in a hand-built
+  pipeline** — `((IApplicationBuilder)app).Build()` off a `WebApplication` 404s every mapped
+  route, which is why the adapters' middleware-based harness couldn't be reused.
 - `tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests/` and
   `tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests/` — the conformance source plus that one alias
   file, nothing else. Both override `TargetFramework` to `net10.0` and reference

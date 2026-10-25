@@ -10,9 +10,53 @@ namespace Hlibz.Redoc.Extensions;
 /// Colors come from the <c>--hlibz-control-*</c> custom properties declared in
 /// <see cref="ReDocToolbar.Css"/>. The dark theme overrides them under its own root selector, so the
 /// picker follows it (and the theme selector) without knowing whether either is enabled.
+/// <para>
+/// The CSS and the script are also exposed on their own, because a host that owns its page serves
+/// them as files rather than inlining them — which is the difference between a page a strict
+/// Content-Security-Policy accepts and one it doesn't.
+/// </para>
 /// </remarks>
 internal static class ReDocDocumentPicker
 {
+    /// <summary>The picker's own CSS, without <see cref="ReDocToolbar.Css"/>.</summary>
+    public const string Css = """
+          /* The <select> itself is the pill, so its whole surface opens the list; the icons sit
+             on top of its padding and let clicks through. */
+          .hlibz-doc-picker {
+            position: relative; order: -1; display: inline-flex; align-items: center;
+            min-width: 0; color: var(--hlibz-control-fg);
+          }
+          .hlibz-doc-picker:hover { color: var(--hlibz-control-fg-hover); }
+          .hlibz-doc-picker select {
+            appearance: none; -webkit-appearance: none;
+            height: 36px; max-width: 280px; margin: 0; padding: 0 30px 0 34px;
+            box-sizing: border-box; border-radius: 999px;
+            background: var(--hlibz-control-bg);
+            border: 1px solid var(--hlibz-control-border);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+            color: inherit; cursor: pointer;
+            font: 500 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            text-overflow: ellipsis;
+          }
+          .hlibz-doc-picker select:focus { outline: none; }
+          .hlibz-doc-picker select:focus-visible {
+            outline: 2px solid var(--hlibz-control-accent); outline-offset: 1px;
+          }
+          .hlibz-doc-picker svg {
+            position: absolute; left: 12px; width: 16px; height: 16px; pointer-events: none;
+          }
+          .hlibz-doc-picker .hlibz-doc-picker-chevron { left: auto; right: 10px; width: 14px; height: 14px; }
+          @media (max-width: 50rem) {
+            .hlibz-doc-picker { flex: 0 1 auto; }
+            .hlibz-doc-picker select { max-width: 100%; }
+          }
+        """;
+
+    /// <summary>
+    /// The picker as a <c>&lt;style&gt;</c> plus a <c>&lt;script&gt;</c>, to append to a page's
+    /// head content. This is what the adapters use, because <c>HeadContent</c> is the only seam
+    /// their hosts give them.
+    /// </summary>
     public static string Build(
         IReadOnlyList<ReDocDocumentPage> pages,
         IReadOnlyList<ReDocLink> links,
@@ -21,38 +65,29 @@ internal static class ReDocDocumentPicker
         const string template = """
             <style>
             {{TOOLBAR_CSS}}
-              /* The <select> itself is the pill, so its whole surface opens the list; the icons sit
-                 on top of its padding and let clicks through. */
-              .hlibz-doc-picker {
-                position: relative; order: -1; display: inline-flex; align-items: center;
-                min-width: 0; color: var(--hlibz-control-fg);
-              }
-              .hlibz-doc-picker:hover { color: var(--hlibz-control-fg-hover); }
-              .hlibz-doc-picker select {
-                appearance: none; -webkit-appearance: none;
-                height: 36px; max-width: 280px; margin: 0; padding: 0 30px 0 34px;
-                box-sizing: border-box; border-radius: 999px;
-                background: var(--hlibz-control-bg);
-                border: 1px solid var(--hlibz-control-border);
-                box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-                color: inherit; cursor: pointer;
-                font: 500 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                text-overflow: ellipsis;
-              }
-              .hlibz-doc-picker select:focus { outline: none; }
-              .hlibz-doc-picker select:focus-visible {
-                outline: 2px solid var(--hlibz-control-accent); outline-offset: 1px;
-              }
-              .hlibz-doc-picker svg {
-                position: absolute; left: 12px; width: 16px; height: 16px; pointer-events: none;
-              }
-              .hlibz-doc-picker .hlibz-doc-picker-chevron { left: auto; right: 10px; width: 14px; height: 14px; }
-              @media (max-width: 50rem) {
-                .hlibz-doc-picker { flex: 0 1 auto; }
-                .hlibz-doc-picker select { max-width: 100%; }
-              }
+            {{PICKER_CSS}}
             </style>
             <script>
+            {{SCRIPT}}
+            </script>
+            """;
+
+        return template
+            .Replace("{{TOOLBAR_CSS}}", ReDocToolbar.Css)
+            .Replace("{{PICKER_CSS}}", Css)
+            .Replace("{{SCRIPT}}", BuildScript(pages, links, current));
+    }
+
+    /// <summary>
+    /// The picker's script, without the <c>&lt;script&gt;</c> tags, so a host that owns its page
+    /// can serve it as a file.
+    /// </summary>
+    public static string BuildScript(
+        IReadOnlyList<ReDocDocumentPage> pages,
+        IReadOnlyList<ReDocLink> links,
+        ReDocDocumentPage current)
+    {
+        const string template = """
             (function () {
               var docs = {{DOCS}};
               var links = {{LINKS}};
@@ -105,20 +140,19 @@ internal static class ReDocDocumentPicker
                 render();
               }
             })();
-            </script>
             """;
 
         // Every page is served at {base}/{route}/index.html, so links are relative to that folder:
         // they need no knowledge of the PathBase and keep working behind a path-rewriting proxy.
-        string toBase = string.Concat(Enumerable.Repeat("../", SegmentCount(current.Route)));
-
         ReDocPickerEntry[] docs =
         [
             .. pages.Select(page => new ReDocPickerEntry(
                 page.Document.DisplayName ?? page.Document.Name,
-                Relative(
-                    toBase,
-                    page.Route.Length == 0 ? string.Empty : $"{EscapePath(page.Route)}/"),
+                ReDocRelativePath.Between(
+                    current.Route,
+                    page.Route.Length == 0
+                        ? string.Empty
+                        : $"{ReDocRelativePath.EscapeRoute(page.Route)}/"),
                 page == current)),
         ];
         ReDocPickerEntry[] linkEntries =
@@ -126,13 +160,12 @@ internal static class ReDocDocumentPicker
             .. links.Select(link => new ReDocPickerEntry(
                 link.Label,
                 link.Url.StartsWith("~/", StringComparison.Ordinal)
-                    ? Relative(toBase, link.Url[2..])
+                    ? ReDocRelativePath.Between(current.Route, link.Url[2..])
                     : link.Url)),
         ];
 
         // The default encoder escapes <, >, & and quotes, so the JSON is safe inside <script>.
         return template
-            .Replace("{{TOOLBAR_CSS}}", ReDocToolbar.Css)
             .Replace("{{TOOLBAR_SCRIPT}}", ReDocToolbar.ScriptFunction)
             .Replace("{{DOCS}}", Serialize(docs))
             .Replace("{{LINKS}}", Serialize(linkEntries));
@@ -140,16 +173,4 @@ internal static class ReDocDocumentPicker
 
     private static string Serialize(ReDocPickerEntry[] entries) =>
         JsonSerializer.Serialize(entries, ReDocPickerJson.Default.ReDocPickerEntryArray);
-
-    private static int SegmentCount(string route) =>
-        route.Length == 0 ? 0 : route.Split('/').Length;
-
-    private static string Relative(string toBase, string path)
-    {
-        string href = toBase + path;
-        return href.Length == 0 ? "./" : href;
-    }
-
-    private static string EscapePath(string route) =>
-        string.Join('/', route.Split('/').Select(Uri.EscapeDataString));
 }

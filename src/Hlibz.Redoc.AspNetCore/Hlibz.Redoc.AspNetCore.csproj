@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Hlibz.Redoc.Extensions</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Unlike the adapters, this one is a real claim: nothing here serializes reflectively, and
+         the page is ours, so there is no host package chaining a reflection resolver in. -->
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <PropertyGroup Label="NuGet metadata">
+    <PackageId>Hlibz.Redoc.AspNetCore</PackageId>
+    <Authors>Hlib Zinchenko</Authors>
+    <Description>ReDoc 3 for ASP.NET Core: middleware and endpoint routing that serve an embedded ReDoc 3 bundle from your own app, with a picker for multiple OpenAPI documents, per-page authorization, long-lived cache headers and a page that needs no inline script. No dependency on Redoc.AspNetCore or Swashbuckle. For adding a dark theme to one of those hosts instead, install Hlibz.Redoc.Extensions.Swashbuckle or Hlibz.Redoc.Extensions.RedocAspNetCore.</Description>
+    <PackageTags>redoc;redoc3;openapi;swagger;aspnetcore;api-docs;documentation;middleware</PackageTags>
+    <PackageProjectUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+  </ItemGroup>
+
+  <!-- No ReDoc host package: this project is one. ASP.NET itself is all it needs. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Hlibz.Redoc.Extensions\Hlibz.Redoc.Extensions.csproj" />
+  </ItemGroup>
+
+  <!-- The bundle is served straight out of the assembly. assets/README.md records where it came
+       from and how to upgrade it; it isn't an embedded resource. -->
+  <ItemGroup>
+    <EmbeddedResource Include="assets\redoc.standalone.js.gz" LogicalName="redoc.standalone.js.gz" />
+    <None Include="assets\README.md" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\docs\icon.png" Pack="true" PackagePath="\" />
+    <!-- ReDoc is MIT, and MIT wants its copyright notice carried with the copy we redistribute. -->
+    <None Include="assets\redoc-LICENSE.txt" Pack="true" PackagePath="\THIRD-PARTY-NOTICES.txt" />
+  </ItemGroup>
+
+  <!-- The page builder and the bundle are internal; the tests drive them directly, the same way
+       the core test project reaches core's. Listed by assembly name, so renaming that project
+       means editing this. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Hlibz.Redoc.AspNetCore.Tests" />
+  </ItemGroup>
+
+</Project>

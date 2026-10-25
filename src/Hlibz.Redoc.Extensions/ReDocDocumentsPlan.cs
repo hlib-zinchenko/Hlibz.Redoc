@@ -11,7 +11,9 @@ namespace Hlibz.Redoc.Extensions;
 /// <remarks>
 /// <para>
 /// Only the per-page <c>UseReDoc</c> call is host-specific, so an adapter is left with building
-/// its options, calling <see cref="Build"/>, and looping <see cref="Pages"/>. Everything in here
+/// its options, calling
+/// <see cref="Build(IApplicationBuilder, IEnumerable{ReDocDocument}, ReDocDocumentsOptionsBase)"/>,
+/// and looping <see cref="Pages"/>. Everything in here
 /// moved out of the original single-host <c>ReDocDocumentsBuilderExtensions</c> unchanged,
 /// including the exception messages and their <c>paramName</c>s, which name the public extension
 /// method's parameters rather than this type's.
@@ -29,15 +31,25 @@ internal sealed class ReDocDocumentsPlan
     private ReDocDocumentsPlan(
         IReadOnlyList<ReDocDocumentPage> pages,
         IReadOnlyList<ReDocLink> links,
-        ReDocDocumentsOptionsBase options)
+        ReDocDocumentsOptionsBase options,
+        ReDocPrefixRedirect? redirect)
     {
         Pages = pages;
         this.links = links;
         this.options = options;
+        Redirect = redirect;
     }
 
     /// <summary>The pages to mount, in picker order.</summary>
     public IReadOnlyList<ReDocDocumentPage> Pages { get; }
+
+    /// <summary>
+    /// The redirect from the route prefix to the first page, or <see langword="null"/> when none
+    /// is wanted. The adapters have it registered for them by
+    /// <see cref="Build(IApplicationBuilder, IEnumerable{ReDocDocument}, ReDocDocumentsOptionsBase)"/>;
+    /// a host that owns its routing maps it itself.
+    /// </summary>
+    public ReDocPrefixRedirect? Redirect { get; }
 
     /// <summary>
     /// Validates the documents, computes their routes, registers the prefix redirect when one is
@@ -45,6 +57,24 @@ internal sealed class ReDocDocumentsPlan
     /// </summary>
     public static ReDocDocumentsPlan Build(
         IApplicationBuilder app,
+        IEnumerable<ReDocDocument> documents,
+        ReDocDocumentsOptionsBase options)
+    {
+        ReDocDocumentsPlan plan = Build(app.ApplicationServices, documents, options);
+        if (plan.Redirect is { } redirect)
+        {
+            UseRedirect(app, redirect);
+        }
+
+        return plan;
+    }
+
+    /// <summary>
+    /// The same, without touching the pipeline: for a host that maps its own endpoints and wants
+    /// <see cref="Redirect"/> as data rather than as middleware.
+    /// </summary>
+    public static ReDocDocumentsPlan Build(
+        IServiceProvider services,
         IEnumerable<ReDocDocument> documents,
         ReDocDocumentsOptionsBase options)
     {
@@ -57,16 +87,16 @@ internal sealed class ReDocDocumentsPlan
             [.. docs.Select(doc => new ReDocDocumentPage(doc, RouteOf(doc, prefix)))];
         ValidateRoutes(pages);
 
-        ReDocDocumentsPlan plan = new(pages, links, options);
-        plan.ValidateDocumentNames(app);
-
         bool prefixIsAPage = pages.Any(
             page => string.Equals(page.Route, prefix, StringComparison.OrdinalIgnoreCase));
-        if (options.RedirectToFirstDocument && !prefixIsAPage)
-        {
-            UseRedirect(app, prefix, pages[0].Route);
-        }
+        ReDocPrefixRedirect? redirect = options.RedirectToFirstDocument && !prefixIsAPage
+            ? new ReDocPrefixRedirect(
+                prefix.Length == 0 ? string.Empty : $"/{prefix}",
+                pages[0].Route.Length == 0 ? "/" : $"/{pages[0].Route}/")
+            : null;
 
+        ReDocDocumentsPlan plan = new(pages, links, options, redirect);
+        plan.ValidateDocumentNames(services);
         return plan;
     }
 
@@ -87,6 +117,13 @@ internal sealed class ReDocDocumentsPlan
     public string PickerFor(ReDocDocumentPage page) =>
         ReDocDocumentPicker.Build(Pages, links, page);
 
+    /// <summary>
+    /// The picker's script for one page, without the <c>&lt;script&gt;</c> tags: for a host that
+    /// serves it as a file instead of inlining it into the page.
+    /// </summary>
+    public string PickerScriptFor(ReDocDocumentPage page) =>
+        ReDocDocumentPicker.BuildScript(Pages, links, page);
+
     private static string RouteOf(ReDocDocument doc, string prefix)
     {
         if (doc.Route is not null)
@@ -97,19 +134,13 @@ internal sealed class ReDocDocumentsPlan
         return prefix.Length == 0 ? doc.Name : $"{prefix}/{doc.Name}";
     }
 
-    private static void UseRedirect(IApplicationBuilder app, string prefix, string firstRoute)
+    private static void UseRedirect(IApplicationBuilder app, ReDocPrefixRedirect redirect)
     {
-        string root = prefix.Length == 0 ? string.Empty : $"/{prefix}";
-        string target = firstRoute.Length == 0 ? "/" : $"/{firstRoute}/";
-
         app.Use((context, next) =>
         {
-            string path = context.Request.Path.Value ?? string.Empty;
-            if (HttpMethods.IsGet(context.Request.Method)
-                && (string.Equals(path, root, StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(path, $"{root}/", StringComparison.OrdinalIgnoreCase)))
+            if (HttpMethods.IsGet(context.Request.Method) && redirect.Matches(context.Request.Path))
             {
-                context.Response.Redirect($"{context.Request.PathBase}{target}");
+                context.Response.Redirect($"{context.Request.PathBase}{redirect.To}");
                 return Task.CompletedTask;
             }
 
@@ -154,7 +185,7 @@ internal sealed class ReDocDocumentsPlan
     /// would otherwise mount fine and the app start clean, because only the browser's spec
     /// request 404s — so the mistake would surface in ReDoc's error screen and nowhere else.
     /// </summary>
-    private void ValidateDocumentNames(IApplicationBuilder app)
+    private void ValidateDocumentNames(IServiceProvider services)
     {
         // Without the placeholder, names don't drive spec URLs, so there is nothing to check.
         if (!options.ValidateDocumentNames
@@ -171,7 +202,7 @@ internal sealed class ReDocDocumentsPlan
             return;
         }
 
-        HashSet<string>? registered = OpenApiDocumentNames.TryResolve(app.ApplicationServices);
+        HashSet<string>? registered = OpenApiDocumentNames.TryResolve(services);
         if (registered is null)
         {
             return;
