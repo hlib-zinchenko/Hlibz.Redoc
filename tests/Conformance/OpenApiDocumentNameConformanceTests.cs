@@ -3,7 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi;
 using Xunit;
 
-namespace Hlibz.Redoc.Extensions.RedocAspNetCore.Tests;
+namespace Hlibz.Redoc.Extensions.Conformance;
 
 /// <summary>
 /// The startup check that every document name matches a registered OpenAPI document. These run
@@ -11,7 +11,7 @@ namespace Hlibz.Redoc.Extensions.RedocAspNetCore.Tests;
 /// <c>Microsoft.Extensions.ApiDescriptions.IDocumentProvider</c> by type name, so the type and
 /// method names are the part worth protecting.
 /// </summary>
-public class OpenApiDocumentNameValidationTests
+public class OpenApiDocumentNameConformanceTests
 {
     [Fact]
     public void WithMatchingNativeDocument_DoesNotThrow()

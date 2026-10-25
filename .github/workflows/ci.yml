@@ -28,13 +28,19 @@ jobs:
       - name: Test core
         run: dotnet test --project tests/Hlibz.Redoc.Extensions.Tests --no-build --configuration Release
 
+      # Both adapter suites are the same assertions from tests/Conformance compiled against a
+      # different host, so a failure in one and not the other is a host difference, not a flake.
       - name: Test Redoc.AspNetCore adapter
         run: dotnet test --project tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests --no-build --configuration Release
+
+      - name: Test Swashbuckle adapter
+        run: dotnet test --project tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests --no-build --configuration Release
 
       - name: Pack
         run: |
           dotnet pack src/Hlibz.Redoc.Extensions --no-build --configuration Release --output ./artifacts
           dotnet pack src/Hlibz.Redoc.Extensions.RedocAspNetCore --no-build --configuration Release --output ./artifacts
+          dotnet pack src/Hlibz.Redoc.Extensions.Swashbuckle --no-build --configuration Release --output ./artifacts
 
       # The README and icon nuget.org shows: at the package root and referenced by the nuspec,
       # since dropping PackageIcon or PackageReadmeFile still packs.

@@ -1,6 +1,6 @@
 using System.ComponentModel;
 
-namespace Sample.RedocAspNetCore.Models;
+namespace Sample.Shared.Models;
 
 public sealed record ValidationErrorResponse(
     [property: Description("Human-readable summary of the validation failure.")] string Message,

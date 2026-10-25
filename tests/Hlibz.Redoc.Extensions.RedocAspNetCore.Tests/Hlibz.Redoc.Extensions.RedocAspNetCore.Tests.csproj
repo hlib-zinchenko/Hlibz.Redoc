@@ -28,4 +28,9 @@
     <ProjectReference Include="..\..\src\Hlibz.Redoc.Extensions.RedocAspNetCore\Hlibz.Redoc.Extensions.RedocAspNetCore.csproj" />
   </ItemGroup>
 
+  <!-- One set of assertions, compiled once per adapter. See ConformanceHost.cs. -->
+  <ItemGroup>
+    <Compile Include="..\Conformance\*.cs" Link="Conformance\%(Filename)%(Extension)" />
+  </ItemGroup>
+
 </Project>

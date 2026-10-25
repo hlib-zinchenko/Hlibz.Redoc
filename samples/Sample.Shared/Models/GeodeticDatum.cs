@@ -1,6 +1,6 @@
 using System.ComponentModel;
 
-namespace Sample.RedocAspNetCore.Models;
+namespace Sample.Shared.Models;
 
 public sealed record GeodeticDatum(
     [property: Description("Name of the geodetic datum, e.g. \"World Geodetic System 1984\".")] string Name,

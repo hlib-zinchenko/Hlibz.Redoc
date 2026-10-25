@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Hlibz.Redoc.Extensions.RedocAspNetCore\Hlibz.Redoc.Extensions.RedocAspNetCore.csproj" />
+    <ProjectReference Include="..\Sample.Shared\Sample.Shared.csproj" />
   </ItemGroup>
 
 </Project>

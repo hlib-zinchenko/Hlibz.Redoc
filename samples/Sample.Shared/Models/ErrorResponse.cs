@@ -1,6 +1,6 @@
 using System.ComponentModel;
 
-namespace Sample.RedocAspNetCore.Models;
+namespace Sample.Shared.Models;
 
 public sealed record ErrorResponse(
     [property: Description("Human-readable explanation of what went wrong.")] string Message,

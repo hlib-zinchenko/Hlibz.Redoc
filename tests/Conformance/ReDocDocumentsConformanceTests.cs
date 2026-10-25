@@ -3,9 +3,13 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
-namespace Hlibz.Redoc.Extensions.RedocAspNetCore.Tests;
+namespace Hlibz.Redoc.Extensions.Conformance;
 
-public class ReDocDocumentsBuilderExtensionsTests
+/// <summary>
+/// <c>UseReDocDocuments</c> end to end: what it rejects, the prefix redirect, and the picker as a
+/// host actually serves it, requested through a real pipeline at <c>/{route}/index.html</c>.
+/// </summary>
+public class ReDocDocumentsConformanceTests
 {
     [Fact]
     public void UseReDocDocuments_WithNoDocuments_Throws()
@@ -202,6 +206,25 @@ public class ReDocDocumentsBuilderExtensionsTests
             "/api-docs/taxes/index.html");
 
         Assert.Contains("--hlibz-control-accent-fg: #09090b", html);
+        Assert.Contains("hlibz-doc-picker", html);
+    }
+
+    [Fact]
+    public async Task ServedPage_CarriesTheTheme_SelectorAndPickerTogether()
+    {
+        // The theme, the selector and the picker each reach the page through HeadContent, and the
+        // picker gets there by appending to whatever UseDarkTheme already wrote. Asserting all
+        // three on one served page is what catches a host whose template drops or truncates it.
+        string html = await GetPageAsync(
+            app => app.UseReDocDocuments(
+                [new ReDocDocument("taxes")],
+                docs => docs.ConfigureReDoc = (redoc, _) =>
+                    redoc.UseDarkTheme(theme => theme.EnableThemeSelector())),
+            "/api-docs/taxes/index.html");
+
+        Assert.Contains("--hlibz-control-accent-fg: #09090b", html);
+        Assert.Contains("""html[data-redoc-theme="dark"] #redoc-container h5""", html);
+        Assert.Contains("hlibz-theme-selector", html);
         Assert.Contains("hlibz-doc-picker", html);
     }
 

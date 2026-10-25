@@ -1,6 +1,6 @@
 using System.ComponentModel;
 
-namespace Sample.RedocAspNetCore.Models;
+namespace Sample.Shared.Models;
 
 public sealed record Facility(
     [property: Description("Name identifying this facility, e.g. a plant or plant campus.")] string Name,

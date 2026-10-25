@@ -1,6 +1,6 @@
 using System.ComponentModel;
 
-namespace Sample.RedocAspNetCore.Models;
+namespace Sample.Shared.Models;
 
 public sealed record InternalErrorResponse(
     [property: Description("Human-readable, non-sensitive summary of the failure.")] string Message,

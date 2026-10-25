@@ -1,6 +1,6 @@
 using System.ComponentModel;
 
-namespace Sample.RedocAspNetCore.Models;
+namespace Sample.Shared.Models;
 
 public sealed record Manufacturer(
     [property: Description("Legal name of the manufacturer.")] string Name,

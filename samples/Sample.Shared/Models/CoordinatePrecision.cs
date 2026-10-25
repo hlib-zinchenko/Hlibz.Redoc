@@ -1,6 +1,6 @@
 using System.ComponentModel;
 
-namespace Sample.RedocAspNetCore.Models;
+namespace Sample.Shared.Models;
 
 public sealed record CoordinatePrecision(
     [property: Description("Horizontal accuracy in meters.")] double HorizontalMeters,

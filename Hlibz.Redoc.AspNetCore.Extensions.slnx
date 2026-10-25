@@ -1,13 +1,17 @@
 <Solution>
   <Folder Name="/samples/">
     <Project Path="samples/Sample.RedocAspNetCore/Sample.RedocAspNetCore.csproj" />
+    <Project Path="samples/Sample.Shared/Sample.Shared.csproj" />
+    <Project Path="samples/Sample.Swashbuckle/Sample.Swashbuckle.csproj" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Hlibz.Redoc.Extensions/Hlibz.Redoc.Extensions.csproj" />
     <Project Path="src/Hlibz.Redoc.Extensions.RedocAspNetCore/Hlibz.Redoc.Extensions.RedocAspNetCore.csproj" />
+    <Project Path="src/Hlibz.Redoc.Extensions.Swashbuckle/Hlibz.Redoc.Extensions.Swashbuckle.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Hlibz.Redoc.Extensions.Tests/Hlibz.Redoc.Extensions.Tests.csproj" />
     <Project Path="tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests.csproj" />
+    <Project Path="tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests.csproj" />
   </Folder>
 </Solution>

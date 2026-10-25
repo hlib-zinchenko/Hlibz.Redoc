@@ -1,6 +1,6 @@
 using System.ComponentModel;
 
-namespace Sample.RedocAspNetCore.Models;
+namespace Sample.Shared.Models;
 
 public sealed record GeoCoordinates(
     [property: Description("Latitude in decimal degrees.")] double Latitude,

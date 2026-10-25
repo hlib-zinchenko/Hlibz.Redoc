@@ -2,8 +2,9 @@
 
 # Hlibz.Redoc.Extensions
 
-Add-ons for [Redoc.AspNetCore](https://www.nuget.org/packages/Redoc.AspNetCore)'s ReDoc UI
-middleware:
+Add-ons for ReDoc UI middleware, on either host —
+[Swashbuckle.AspNetCore.ReDoc](https://www.nuget.org/packages/Swashbuckle.AspNetCore.ReDoc) or
+[Redoc.AspNetCore](https://www.nuget.org/packages/Redoc.AspNetCore):
 
 - **Dark theme.** One line fixes the colors ReDoc hardcodes outside its own theme config
   (scrollbar, selection, section captions, nested-schema backgrounds, sample-tab text) and adds a
@@ -13,8 +14,8 @@ middleware:
   switch between them, like Swagger UI's definition selector.
 
 [![CI](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/actions/workflows/ci.yml)
-[![NuGet](https://img.shields.io/nuget/v/Hlibz.Redoc.Extensions.RedocAspNetCore.svg)](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.RedocAspNetCore)
-[![NuGet Downloads](https://img.shields.io/nuget/dt/Hlibz.Redoc.Extensions.RedocAspNetCore.svg)](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.RedocAspNetCore)
+[![NuGet](https://img.shields.io/nuget/v/Hlibz.Redoc.Extensions.svg)](https://www.nuget.org/packages/Hlibz.Redoc.Extensions)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/Hlibz.Redoc.Extensions.svg)](https://www.nuget.org/packages/Hlibz.Redoc.Extensions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/LICENSE)
 
 ![Dark ReDoc UI screenshot](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/main/docs/screenshot.png)
@@ -247,18 +248,28 @@ static files served alongside documents you do register.
 
 ## Install
 
+Pick the adapter for the ReDoc middleware you already use. On
+[Swashbuckle.AspNetCore.ReDoc](https://www.nuget.org/packages/Swashbuckle.AspNetCore.ReDoc):
+
+```bash
+dotnet add package Hlibz.Redoc.Extensions.Swashbuckle
+```
+
+On [Redoc.AspNetCore](https://www.nuget.org/packages/Redoc.AspNetCore):
+
 ```bash
 dotnet add package Hlibz.Redoc.Extensions.RedocAspNetCore
 ```
 
-Then `using Hlibz.Redoc.Extensions;`.
+Either way, `using Hlibz.Redoc.Extensions;` — the namespace, and everything in this README, is the
+same on both. Each adapter brings in `Hlibz.Redoc.Extensions`, the host-agnostic engine, on its
+own; install one, not both.
 
-This is the adapter for [Redoc.AspNetCore](https://www.nuget.org/packages/Redoc.AspNetCore); it
-brings in `Hlibz.Redoc.Extensions`, the host-agnostic engine, on its own. It replaces
-`Hlibz.Redoc.AspNetCore.Extensions`, which was the same code built against one host — migrating is
-a package swap and a `using` change, with no API change.
+`Hlibz.Redoc.Extensions.RedocAspNetCore` replaces `Hlibz.Redoc.AspNetCore.Extensions`, which was
+the same code built against one host — migrating is a package swap and a `using` change, with no
+API change.
 
-## Running the sample locally
+## Running the samples locally
 
 ```bash
 dotnet run --project samples/Sample.RedocAspNetCore
@@ -269,13 +280,21 @@ This opens `http://localhost:5299/api-docs` in your browser automatically. It re
 sample's three documents. The Facilities page is configured with `UseSystemFonts()` and the other
 two aren't, so switching to it shows the difference.
 
+```bash
+dotnet run --project samples/Sample.Swashbuckle
+```
+
+The same app on port 5399, against the other host. Both serve the same spec from `Sample.Shared`
+and their `Program.cs` files are line-for-line the same, so running them together shows what, if
+anything, differs between the hosts.
+
 ## Compatibility
 
 | | |
 |---|---|
 | Library target | `net8.0` |
 | Works in host apps targeting | net8.0, net9.0, net10.0 (NuGet TFM compatibility) |
-| Requires | `Redoc.AspNetCore` ≥ 1.0.0 |
+| Requires | `Redoc.AspNetCore` ≥ 1.0.0, or `Swashbuckle.AspNetCore.ReDoc` ≥ 10.3.1 |
 | Trimming | `IsAotCompatible` — this assembly raises no trim or AOT warnings |
 
 The trimming row is a claim about this package only. ReDoc's config still travels through

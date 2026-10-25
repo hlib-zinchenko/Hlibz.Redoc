@@ -1,17 +1,16 @@
 using System.Text;
 
-using Redoc.AspNetCore;
 using Xunit;
 
-namespace Hlibz.Redoc.Extensions.RedocAspNetCore.Tests;
+namespace Hlibz.Redoc.Extensions.Conformance;
 
 /// <summary>
-/// What <c>UseDarkTheme</c> does to Redoc.AspNetCore's own options: the two seams it writes to, and
-/// the index-page rewrite, which is the one part that depends on this host's actual template. The
-/// content of the head string and the theme config is asserted host-free in
+/// What <c>UseDarkTheme</c> does to a host's own options: the two seams it writes to, and the
+/// index-page rewrite, run against that host's <em>actual</em> stock <c>index.html</c>. The content
+/// of the head string and the theme config is asserted host-free in
 /// <c>Hlibz.Redoc.Extensions.Tests</c>.
 /// </summary>
-public class RedocOptionsExtensionsTests
+public class DarkThemeConformanceTests
 {
     [Fact]
     public void UseDarkTheme_PutsTheThemeConfigOnAdditionalItems()
