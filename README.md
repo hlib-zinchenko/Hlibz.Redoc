@@ -107,6 +107,64 @@ With the selector enabled, the dark CSS overrides are scoped under `html[data-re
 `AdditionalCss` is not scoped and applies to both themes, so prefix your rules with that selector
 if they should be dark-only.
 
+### Fonts: no request to Google
+
+ReDoc's page pulls Montserrat and Roboto from `fonts.googleapis.com` at runtime. `UseSystemFonts()`
+renders the docs in the viewer's own OS fonts instead and removes that `<link>` from the page, so
+it makes no third-party request at all:
+
+```csharp
+options.UseDarkTheme(theme => theme.UseSystemFonts());
+```
+
+That's one `style-src`/`font-src` entry you no longer need in a strict CSP, docs that render the
+same on an air-gapped network, and no viewer IP addresses reaching Google — which LG München I
+ruled a GDPR violation in 2022 (3 O 17493/20) when it happens without consent.
+
+Name your own stack instead, or mix and match:
+
+```csharp
+options.UseDarkTheme(theme =>
+{
+    theme.UseSystemFonts();                          // sets all three, and drops the <link>
+    theme.FontFamily = "Inter, system-ui, sans-serif";
+    theme.HeadingsFontFamily = "Lora, Georgia, serif";
+    theme.CodeFontFamily = "Fira Code, ui-monospace, monospace";
+    // theme.LoadGoogleFonts = false;                // drop the <link> without changing the fonts
+});
+```
+
+Self-hosted or bundled fonts go in `AdditionalCss` as `@font-face` rules, and the family name then
+goes in the stacks above. Keep stacks to plain ASCII names: ReDoc's page carries its theme config
+inside a JavaScript string literal, so a character that has to be escaped there breaks the whole
+page. Quotes are allowed and dropped (CSS doesn't need them for a family name); anything else
+unusable throws at startup rather than at runtime.
+
+Dropping the `<link>` rewrites ReDoc's `index.html`, so if you set your own `IndexStream`, set it
+before calling `UseDarkTheme`.
+
+### Favicon
+
+ReDoc's page declares no icon, so browsers fall back to `/favicon.ico`. To point it somewhere else:
+
+```csharp
+options.UseDarkTheme(theme => theme.Favicon = "/favicon.svg");
+```
+
+Use an absolute URL or a root-relative path — the pages are served at `/{route}/index.html`, so a
+relative one would resolve against the page's own folder.
+
+### Printing
+
+Dark docs print badly: the page is either a black rectangle or near-white text on white paper,
+depending on the browser's "background graphics" setting. `UseDarkTheme` therefore ships a print
+stylesheet that prints the documentation black-on-white and leaves out the sidebar and this
+package's own controls. Turn it off with `theme.PrintStyles = false`.
+
+It only changes colors and hides page furniture. Sections that are collapsed on screen stay
+collapsed on paper — ReDoc doesn't render their content until they're opened, so CSS can't reach
+it.
+
 ## Multiple OpenAPI documents
 
 `UseReDocDocuments` serves one ReDoc page per OpenAPI document, each with a picker in the top-right
@@ -201,7 +259,8 @@ dotnet run --project samples/Hlibz.Redoc.AspNetCore.Extensions.Sample
 
 This opens `http://localhost:5299/api-docs` in your browser automatically. It redirects to
 `/api-docs/widgets/`, the page in the screenshot above, and the picker switches between the
-sample's three documents.
+sample's three documents. The Facilities page is configured with `UseSystemFonts()` and the other
+two aren't, so switching to it shows the difference.
 
 ## Compatibility
 
@@ -210,6 +269,11 @@ sample's three documents.
 | Library target | `net8.0` |
 | Works in host apps targeting | net8.0, net9.0, net10.0 (NuGet TFM compatibility) |
 | Requires | `Redoc.AspNetCore` ≥ 1.0.0 |
+| Trimming | `IsAotCompatible` — this assembly raises no trim or AOT warnings |
+
+The trimming row is a claim about this package only. ReDoc's config still travels through
+`Redoc.AspNetCore`'s own reflection-based JSON serialization, which a fully NativeAOT host won't
+run.
 
 ## Content Security Policy (CSP)
 
@@ -264,7 +328,8 @@ ReDoc's bundle (2.0.0) also injects two static styles as it loads, and those can
 Allow them by hash in `style-src`: `'sha256-47DEQpj8HBSa+/TImW+5JCeuQeRkm5NMpJWZG3hSuFU='` and
 `'sha256-DLDPR1ic47WIdK2WyeLkblb/tm2mQH+Jt/NNhZWu1k0='`. ReDoc also loads fonts from Google Fonts
 (`fonts.googleapis.com` / `fonts.gstatic.com`) and the Redocly logo from `cdn.redoc.ly`, so allow
-those hosts too or accept them being blocked.
+those hosts too or accept them being blocked. [`UseSystemFonts()`](#fonts-no-request-to-google)
+removes the font request outright, so only `cdn.redoc.ly` is left.
 
 ## Contributing
 

@@ -20,11 +20,31 @@ app.UseReDocDocuments(
     {
         docs.RoutePrefix = "api-docs";
         docs.Links.Add(new ReDocLink("Widgets OpenAPI JSON", "~/openapi/widgets.json"));
-        docs.ConfigureReDoc = (redoc, _) =>
-            redoc.UseDarkTheme(theme => theme.EnableThemeSelector(defaultTheme: ReDocTheme.System));
+        docs.ConfigureReDoc = (redoc, document) => redoc.UseDarkTheme(theme =>
+        {
+            theme.EnableThemeSelector(defaultTheme: ReDocTheme.System);
+            theme.Favicon = "/favicon.svg";
+
+            // Only one of the three pages, so the difference is visible by switching documents:
+            // this one renders in the viewer's OS fonts and makes no request to Google's.
+            if (document.Name == "facilities")
+            {
+                theme.UseSystemFonts();
+            }
+        });
     });
 
 app.MapGet("/", () => TypedResults.Redirect("/api-docs")).ExcludeFromDescription();
+
+// The icon the pages point at, inline so the sample needs no wwwroot.
+app.MapGet("/favicon.svg", () => TypedResults.Text(
+    """
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+      <rect width="16" height="16" rx="4" fill="#2a3142"/>
+      <path d="M4 5h8M4 8h8M4 11h5" stroke="#38bdf8" stroke-width="1.6" stroke-linecap="round"/>
+    </svg>
+    """,
+    "image/svg+xml")).ExcludeFromDescription();
 
 app.MapGet("/widgets", () => TypedResults.Ok(Widget.Sample))
     .Produces<InternalErrorResponse>(StatusCodes.Status500InternalServerError)

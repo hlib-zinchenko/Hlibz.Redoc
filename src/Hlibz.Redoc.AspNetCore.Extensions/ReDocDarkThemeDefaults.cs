@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 
 namespace Hlibz.Redoc.AspNetCore.Extensions;
@@ -55,6 +56,26 @@ internal static class ReDocDarkThemeDefaults
 
             """;
 
+        // Printing can't go through the theme config: ReDoc builds its palette in JS, once, and a
+        // print stylesheet can't re-point it. So the rendered colors get overridden instead —
+        // otherwise a dark page prints as a black rectangle, or as near-white text on white paper
+        // when the browser leaves background graphics out.
+        const string printCss = """
+              @media print {
+                html { color-scheme: light !important; }
+                html, html body { background: #ffffff !important; color: #000000 !important; }
+                #redoc-container, #redoc-container * {
+                  background-color: transparent !important; background-image: none !important;
+                  color: #000000 !important; border-color: #c4c4c4 !important;
+                  box-shadow: none !important; text-shadow: none !important;
+                }
+                /* Navigation means nothing on paper, and the sidebar is a fixed-width column that
+                   would otherwise take a third of every page. */
+                .hlibz-toolbar, #redoc-container .menu-content { display: none !important; }
+              }
+
+            """;
+
         string additionalCssBlock = string.IsNullOrWhiteSpace(theme.AdditionalCss)
             ? string.Empty
             : $"{theme.AdditionalCss.Trim()}\n";
@@ -63,6 +84,12 @@ internal static class ReDocDarkThemeDefaults
         if (!theme.ThemeSelectorEnabled)
         {
             head.Append("<meta name=\"color-scheme\" content=\"dark\">\n");
+        }
+
+        if (theme.Favicon is not null)
+        {
+            // Redoc.AspNetCore's template declares no icon, so this is the page's only one.
+            head.Append($"<link rel=\"icon\" href=\"{WebUtility.HtmlEncode(theme.Favicon)}\">\n");
         }
 
         head.Append("<style>\n").Append(darkCss.Replace("{{ROOT}}", root));
@@ -82,10 +109,15 @@ internal static class ReDocDarkThemeDefaults
             head.Append(ReDocToolbar.Css).Append(ReDocThemeSelector.Css);
         }
 
+        if (theme.PrintStyles)
+        {
+            head.Append(printCss);
+        }
+
         head.Append(additionalCssBlock).Append("</style>");
         if (theme.ThemeSelectorEnabled)
         {
-            head.Append('\n').Append(ReDocThemeSelector.BuildScript(theme.DefaultTheme));
+            head.Append('\n').Append(ReDocThemeSelector.BuildScript(theme));
         }
 
         return head.ToString();
@@ -96,6 +128,39 @@ internal static class ReDocDarkThemeDefaults
         string main = theme.PrimaryColor;
         string light = theme.PrimaryColorLight ?? DefaultLight(theme.PrimaryColor);
         string dark = theme.PrimaryColorDark ?? DefaultDark(theme.PrimaryColor);
+
+        Dictionary<string, object> typography = new()
+        {
+            ["links"] = new Dictionary<string, object>
+            {
+                ["color"] = main, ["visited"] = light, ["hover"] = light,
+            },
+            ["code"] = new Dictionary<string, object>
+            {
+                ["color"] = "#f59e0b", ["backgroundColor"] = "#27272a",
+            },
+        };
+
+        // Font families are their own feature, and they share `typography` with the colors above:
+        // merge them in rather than letting either overwrite the other's keys.
+        Dictionary<string, object> fonts =
+            ReDocFonts.BuildTypographyConfig(ReDocFonts.Resolve(theme)) ?? [];
+        foreach (KeyValuePair<string, object> entry in fonts)
+        {
+            if (typography.TryGetValue(entry.Key, out object? existing)
+                && existing is Dictionary<string, object> existingGroup
+                && entry.Value is Dictionary<string, object> group)
+            {
+                foreach (KeyValuePair<string, object> value in group)
+                {
+                    existingGroup[value.Key] = value.Value;
+                }
+            }
+            else
+            {
+                typography[entry.Key] = entry.Value;
+            }
+        }
 
         return new Dictionary<string, object>
         {
@@ -194,14 +259,7 @@ internal static class ReDocDarkThemeDefaults
                 },
             },
             ["codeBlock"] = new Dictionary<string, object> { ["backgroundColor"] = "#18181b" },
-            ["typography"] = new Dictionary<string, object>
-            {
-                ["links"] = new Dictionary<string, object>
-                {
-                    ["color"] = main, ["visited"] = light, ["hover"] = light,
-                },
-                ["code"] = new Dictionary<string, object> { ["color"] = "#f59e0b", ["backgroundColor"] = "#27272a" },
-            },
+            ["typography"] = typography,
             ["schema"] = new Dictionary<string, object>
             {
                 ["linesColor"] = "#3f3f46",

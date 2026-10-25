@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
 namespace Hlibz.Redoc.AspNetCore.Extensions;
@@ -24,6 +25,15 @@ internal static class OpenApiDocumentNames
     /// <see langword="null"/> when no provider is registered at all — there is then nothing to
     /// validate against.
     /// </summary>
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2026:RequiresUnreferencedCode",
+        Justification = "A provider type or method that trimming removed resolves to null here, "
+            + "which skips the check rather than failing it.")]
+    [UnconditionalSuppressMessage(
+        "Trimming",
+        "IL2075:UnrecognizedReflectionPattern",
+        Justification = "Same: GetDocumentNames not being found leaves the names unvalidated.")]
     internal static HashSet<string>? TryResolve(IServiceProvider services)
     {
         HashSet<string> names = new(StringComparer.OrdinalIgnoreCase);

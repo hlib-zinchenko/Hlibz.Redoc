@@ -2,6 +2,9 @@
 
   <PropertyGroup>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Implies IsTrimmable. Only a claim about this assembly: the theme config still travels
+         through Redoc.AspNetCore's own reflection-based JSON serialization. -->
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
   <PropertyGroup Label="NuGet metadata">

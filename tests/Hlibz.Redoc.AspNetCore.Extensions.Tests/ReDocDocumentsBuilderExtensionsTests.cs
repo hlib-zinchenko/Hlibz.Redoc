@@ -165,8 +165,8 @@ public class ReDocDocumentsBuilderExtensionsTests
             "/api-docs/taxes/index.html");
 
         Assert.Contains(
-            """var links = [{"label":"Swagger UI","href":"../../swagger"},""" +
-            """{"label":"Status","href":"https://status.example.com/"}];""",
+            """var links = [{"label":"Swagger UI","href":"../../swagger","current":false},""" +
+            """{"label":"Status","href":"https://status.example.com/","current":false}];""",
             html);
     }
 

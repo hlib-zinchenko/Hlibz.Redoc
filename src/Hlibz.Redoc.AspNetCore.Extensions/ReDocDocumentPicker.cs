@@ -112,27 +112,34 @@ internal static class ReDocDocumentPicker
         // they need no knowledge of the PathBase and keep working behind a path-rewriting proxy.
         string toBase = string.Concat(Enumerable.Repeat("../", SegmentCount(current.Route)));
 
-        var docs = pages.Select(page => new
-        {
-            label = page.Document.DisplayName ?? page.Document.Name,
-            href = Relative(toBase, page.Route.Length == 0 ? string.Empty : $"{EscapePath(page.Route)}/"),
-            current = page == current,
-        });
-        var linkEntries = links.Select(link => new
-        {
-            label = link.Label,
-            href = link.Url.StartsWith("~/", StringComparison.Ordinal)
-                ? Relative(toBase, link.Url[2..])
-                : link.Url,
-        });
+        ReDocPickerEntry[] docs =
+        [
+            .. pages.Select(page => new ReDocPickerEntry(
+                page.Document.DisplayName ?? page.Document.Name,
+                Relative(
+                    toBase,
+                    page.Route.Length == 0 ? string.Empty : $"{EscapePath(page.Route)}/"),
+                page == current)),
+        ];
+        ReDocPickerEntry[] linkEntries =
+        [
+            .. links.Select(link => new ReDocPickerEntry(
+                link.Label,
+                link.Url.StartsWith("~/", StringComparison.Ordinal)
+                    ? Relative(toBase, link.Url[2..])
+                    : link.Url)),
+        ];
 
         // The default encoder escapes <, >, & and quotes, so the JSON is safe inside <script>.
         return template
             .Replace("{{TOOLBAR_CSS}}", ReDocToolbar.Css)
             .Replace("{{TOOLBAR_SCRIPT}}", ReDocToolbar.ScriptFunction)
-            .Replace("{{DOCS}}", JsonSerializer.Serialize(docs))
-            .Replace("{{LINKS}}", JsonSerializer.Serialize(linkEntries));
+            .Replace("{{DOCS}}", Serialize(docs))
+            .Replace("{{LINKS}}", Serialize(linkEntries));
     }
+
+    private static string Serialize(ReDocPickerEntry[] entries) =>
+        JsonSerializer.Serialize(entries, ReDocPickerJson.Default.ReDocPickerEntryArray);
 
     private static int SegmentCount(string route) =>
         route.Length == 0 ? 0 : route.Split('/').Length;

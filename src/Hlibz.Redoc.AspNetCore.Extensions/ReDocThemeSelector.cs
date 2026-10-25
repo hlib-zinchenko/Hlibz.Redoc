@@ -8,8 +8,9 @@ namespace Hlibz.Redoc.AspNetCore.Extensions;
 /// Everything is delivered through <c>HeadContent</c>, so it works with Redoc.AspNetCore's stock
 /// <c>index.html</c> and with custom <c>IndexStream</c> templates alike. The script intercepts the
 /// <c>window.Redoc</c> global as <c>redoc.standalone.js</c> assigns it, wraps <c>Redoc.init</c> to
-/// drop the dark <c>theme</c> config when the light theme is selected, and on a switch tears the
-/// UI down with <c>Redoc.destroy</c> and re-initializes it with the other theme.
+/// drop the dark <c>theme</c> config when the light theme is selected (keeping just the configured
+/// font families, which belong to both themes), and on a switch tears the UI down with
+/// <c>Redoc.destroy</c> and re-initializes it with the other theme.
 /// </remarks>
 internal static class ReDocThemeSelector
 {
@@ -41,7 +42,7 @@ internal static class ReDocThemeSelector
 
         """;
 
-    public static string BuildScript(ReDocTheme defaultTheme)
+    public static string BuildScript(DarkThemeOptions theme)
     {
         const string script = """
             <script>
@@ -51,6 +52,9 @@ internal static class ReDocThemeSelector
               var systemDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
               var preference = readStoredPreference() || '{{DEFAULT_THEME}}';
               var theme = resolve(preference);
+              // Font overrides belong to both themes, so the light one gets them back as a theme
+              // of its own; null when no font family is configured.
+              var lightThemeConfig = {{LIGHT_THEME_CONFIG}};
               var redoc, originalInit, darkThemeConfig, lastInit, buttons = [];
 
             {{TOOLBAR_SCRIPT}}
@@ -72,7 +76,9 @@ internal static class ReDocThemeSelector
               function optionsFor(options) {
                 var result = {};
                 for (var key in options) { result[key] = options[key]; }
-                if (theme === 'dark') { result.theme = darkThemeConfig; } else { delete result.theme; }
+                if (theme === 'dark') { result.theme = darkThemeConfig; }
+                else if (lightThemeConfig) { result.theme = lightThemeConfig; }
+                else { delete result.theme; }
                 return result;
               }
 
@@ -180,7 +186,7 @@ internal static class ReDocThemeSelector
             </script>
             """;
 
-        string defaultThemeValue = defaultTheme switch
+        string defaultThemeValue = theme.DefaultTheme switch
         {
             ReDocTheme.Light => "light",
             ReDocTheme.System => "system",
@@ -188,6 +194,9 @@ internal static class ReDocThemeSelector
         };
         return script
             .Replace("{{TOOLBAR_SCRIPT}}", ReDocToolbar.ScriptFunction)
-            .Replace("{{DEFAULT_THEME}}", defaultThemeValue);
+            .Replace("{{DEFAULT_THEME}}", defaultThemeValue)
+            .Replace(
+                "{{LIGHT_THEME_CONFIG}}",
+                ReDocFonts.BuildThemeConfigJson(ReDocFonts.Resolve(theme)));
     }
 }

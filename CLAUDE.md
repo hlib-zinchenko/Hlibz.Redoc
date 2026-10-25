@@ -39,8 +39,9 @@ needs `--project <path>` rather than a bare directory argument.
   `RedocOptionsExtensions.UseDarkTheme(this ReDocOptions, Action<DarkThemeOptions>?)` and
   `ReDocDocumentsBuilderExtensions.UseReDocDocuments(this IApplicationBuilder, ...)`.
   - `DarkThemeOptions` — customization surface: `PrimaryColor`/`PrimaryColorLight`/
-    `PrimaryColorDark`/`AdditionalCss`. Everything else in the palette (success/warning/error/
-    grays/etc.) is intentionally fixed — this is a themed package, not a general theming engine.
+    `PrimaryColorDark`/`AdditionalCss`, plus the font, `Favicon` and `PrintStyles` settings below.
+    Everything else in the palette (success/warning/error/grays/etc.) is intentionally fixed —
+    this is a themed package, not a general theming engine.
   - `ReDocDarkThemeDefaults` (internal) builds the actual `HeadContent` string and theme config
     `Dictionary<string, object>` consumed by `ReDocOptions`.
   - `DarkThemeOptions.EnableThemeSelector(ReDocTheme)` opts into a Light/System/Dark selector
@@ -52,6 +53,24 @@ needs `--project <path>` rather than a bare directory argument.
     `Redoc.destroy` + re-init, because ReDoc builds its theme once per store. With the selector on,
     the dark CSS is scoped under `html[data-redoc-theme="dark"]`. With it off, the scope is plain
     `html`.
+  - `ReDocFonts` (internal) backs `UseSystemFonts()` / `FontFamily` / `HeadingsFontFamily` /
+    `CodeFontFamily` / `LoadGoogleFonts`. Three things to know. (1) The families go in ReDoc's
+    `typography` theme config, but the selector drops that config for Light, so the script also
+    carries a fonts-only theme (`lightThemeConfig`) — otherwise Light reverts to Montserrat/Roboto
+    with nothing loading them. (2) Setting the families doesn't stop the request: the `<link>` sits
+    above `%(HeadContent)` in the index template, so `UseDarkTheme` wraps `IndexStream` and strips
+    the tag instead — which is why a caller's own `IndexStream` must be set first. (3) The page
+    carries the config as `JSON.parse('%(ConfigObject)')`, a JS string literal that eats
+    backslashes, so any `\uXXXX` the serializer emits breaks `JSON.parse` on the *whole* config
+    (blank page, one console error). Font stacks are therefore stripped of quotes — optional in
+    CSS — and throw on anything else needing escaping. Any future free-text theme setting has the
+    same constraint.
+  - `ReDocDarkThemeDefaults.BuildHeadContent` also emits the `Favicon` link and, unless
+    `PrintStyles` is off, an `@media print` block. The palette can't be re-pointed per media query
+    (ReDoc builds it once in JS), so printing overrides the rendered colors wholesale and hides the
+    sidebar and toolbar. Collapsed sections stay collapsed: ReDoc doesn't render their content
+    until opened, so CSS can't reach it. The block goes before `AdditionalCss`, so a caller's print
+    rules win at equal specificity.
   - `ColorUtils` (internal) — simple HSL lighten/darken, used only when a caller supplies a
     custom `PrimaryColor` without also specifying explicit light/dark shades. The zero-config
     default path uses fixed, hand-picked values instead of the computed fallback.
@@ -63,8 +82,10 @@ needs `--project <path>` rather than a bare directory argument.
     `ReDocDocumentPicker` (internal) builds each page's hrefs relative to its own route depth
     (`../` per segment). The hrefs need no PathBase and survive path-rewriting proxies. `~/` link URLs
     resolve the same way. The picker JSON is embedded in a `<script>` and relies on
-    `JsonSerializer`'s default escaping. `DocumentTitle` is HTML-encoded because Redoc.AspNetCore
-    writes it into `<title>` raw.
+    `ReDocPickerJson`, a source-generated `JsonSerializerContext` (the reflection-based
+    `JsonSerializer.Serialize` overloads aren't trim/AOT-clean), whose default escaping makes the
+    JSON safe inside `<script>`. `DocumentTitle` is HTML-encoded because Redoc.AspNetCore writes it
+    into `<title>` raw.
   - `OpenApiDocumentNames` (internal) backs `ReDocDocumentsOptions.ValidateDocumentNames` (on by
     default): a configured name that isn't a registered OpenAPI document throws at startup instead
     of serving a page whose spec 404s. It resolves the *internal*
@@ -127,6 +148,10 @@ To publish: don't bump anything in the csproj (the tag drives the version), just
   without a `Version=` attribute.
 - No StyleCop/SonarAnalyzer: this is a small single-purpose package, kept intentionally
   lightweight. `TreatWarningsAsErrors` is still on.
+- The library sets `IsAotCompatible`, so the trim/AOT analyzers run with warnings as errors: new
+  reflection or reflection-based JSON has to be source-generated or suppressed with a justification
+  that holds. It's a claim about this assembly only — Redoc.AspNetCore serializes the config
+  reflectively, so a real NativeAOT host still won't run it.
 - The package icon's source is `docs/icon.svg`. `docs/icon.png` (128x128) is packed as
   `PackageIcon` and shown at the top of README through its `raw.githubusercontent.com` URL on
   `main`, because nuget.org renders neither relative image paths nor raw HTML. So a changed
