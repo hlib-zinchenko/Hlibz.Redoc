@@ -237,22 +237,75 @@ public class ReDocPagesTests
     }
 
     [Fact]
-    public void MapReDocDocuments_ReturnsABuilderCoveringEveryEndpointItAdds()
+    public async Task UnlistedDocument_IsLeftOutOfAListedPagesPicker()
     {
-        WebApplication app = WebApplication.CreateSlimBuilder().Build();
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            [
+                new ReDocDocument("public"),
+                new ReDocDocument("partners"),
+                new ReDocDocument("internal", Unlisted: true),
+            ]);
 
-        // This is the point of the endpoint-routing form: .RequireAuthorization() and friends
-        // reach every file a documentation page is made of, not just its markup.
-        app.MapReDocDocuments(ReDocTestApp.DefaultDocuments).WithMetadata(new Marker());
+        string picker = await GetAsync(app, "/api-docs/public/redoc-picker.js");
 
-        IReadOnlyList<Endpoint> endpoints =
-            [.. ((IEndpointRouteBuilder)app).DataSources.SelectMany(source => source.Endpoints)];
-        Assert.NotEmpty(endpoints);
-        Assert.All(endpoints, endpoint =>
-            Assert.NotNull(endpoint.Metadata.GetMetadata<Marker>()));
+        Assert.Contains("\"label\":\"partners\"", picker, StringComparison.Ordinal);
+        Assert.DoesNotContain("internal", picker, StringComparison.Ordinal);
     }
 
-    private sealed class Marker;
+    [Fact]
+    public async Task UnlistedDocument_StillSeesEverythingFromItsOwnPage()
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            [
+                new ReDocDocument("public"),
+                new ReDocDocument("internal", Unlisted: true),
+                new ReDocDocument("secret", Unlisted: true),
+            ]);
+
+        string picker = await GetAsync(app, "/api-docs/internal/redoc-picker.js");
+
+        // Whoever got here can navigate normally; hiding the links from them would only make the
+        // internal documents harder to use, not harder to reach.
+        Assert.Contains("\"label\":\"public\"", picker, StringComparison.Ordinal);
+        Assert.Contains("\"label\":\"secret\"", picker, StringComparison.Ordinal);
+        Assert.Contains("\"label\":\"internal\"", picker, StringComparison.Ordinal);
+        Assert.Contains("\"current\":true", picker, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UnlistedDocument_LeavesTheOnlyListedPageWithNoPickerAtAll()
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            [new ReDocDocument("public"), new ReDocDocument("internal", Unlisted: true)]);
+
+        string html = await GetAsync(app, "/api-docs/public/");
+        string css = await GetAsync(app, "/api-docs/public/redoc-page.css");
+
+        // A dropdown holding only the page you are on is worse than no dropdown, and its rules
+        // shouldn't be in the stylesheet either.
+        Assert.DoesNotContain("redoc-picker.js", html, StringComparison.Ordinal);
+        Assert.DoesNotContain(".hlibz-doc-picker", css, StringComparison.Ordinal);
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await app.GetAsync("/api-docs/public/redoc-picker.js")).StatusCode);
+
+        // The unlisted page still has one, because from there there is somewhere to go.
+        string unlisted = await GetAsync(app, "/api-docs/internal/");
+        Assert.Contains("redoc-picker.js", unlisted, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task UnlistedDocument_IsStillServed()
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            [new ReDocDocument("public"), new ReDocDocument("internal", Unlisted: true)]);
+
+        // Unlisted hides the link and nothing more. Saying so in a test, because a reader who
+        // assumed otherwise would ship an unprotected page.
+        HttpResponseMessage response = await app.GetAsync("/api-docs/internal/");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
 
     private static Task<string> GetAsync(ReDocTestApp app, string path) =>
         app.GetStringAsync(path);

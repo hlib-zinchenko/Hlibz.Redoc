@@ -106,10 +106,18 @@ takes one project at a time.
     nonce on `script-src` only; don't collapse that back into one claim covering both hosts.
 - `src/Hlibz.Redoc.AspNetCore/` — **our own host**: it embeds ReDoc and serves its own page, so it
   references no host package, only core. Public surface is `MapReDocDocuments` (endpoint routing,
-  returning a convention builder over every endpoint it adds, so `.RequireAuthorization()` reaches
-  the whole page) plus a `UseReDocDocuments` middleware form for an app without routing, and
-  `ReDocDocumentsOptions : ReDocDocumentsOptionsBase` — same type name as the adapters', different
-  members, because this host has no `ReDocOptions` to hand to a `ConfigureReDoc` callback.
+  returning a `ReDocDocumentsConventionBuilder` over every endpoint it adds, so
+  `.RequireAuthorization()` reaches the whole page) plus a `UseReDocDocuments` middleware form for
+  an app without routing, and `ReDocDocumentsOptions : ReDocDocumentsOptionsBase` — same type name
+  as the adapters', different members, because this host has no `ReDocOptions` to hand to a
+  `ConfigureReDoc` callback.
+  - `MapReDocDocuments` returns a **concrete class, not `IEndpointConventionBuilder`**, so it can
+    carry `ForDocument(name)`. That return type was widened before the first v2 tag on purpose:
+    source-compatible, binary-breaking, and free only while nothing is published.
+    `ForDocument` covers one document's own endpoints and deliberately **not** the shared bundle —
+    one endpoint serves the whole site, so gating it with a single document would blank every
+    other page, and it is ReDoc's own JS. An unknown name throws; a `RequireAuthorization` that
+    silently protects nothing is the failure worth ruling out.
   - `assets/redoc.standalone.js.gz` is the ReDoc bundle, **checked in gzipped and served that way**.
     No Node, no `npm`, no build-time download: `assets/README.md` records the version, the npm
     tarball integrity and the upgrade steps, and `ReDocBundle.Version` must match it (a test
@@ -166,6 +174,13 @@ takes one project at a time.
     adapters can only inline them through `HeadContent` while our host serves them as files. The
     adapters' output is byte-identical either way — it was diffed against the previous commit's
     served pages on both hosts, which is the standard any change in here should meet.
+  - `ReDocDocument.Unlisted` keeps a document out of the picker on *listed* pages; unlisted pages
+    list everything. The rule is about the page doing the asking, never its viewer, because each
+    page is built once at startup and served to everyone as the same string —
+    `ReDocDocumentsPlan.PickerPagesFrom` is where that is decided, and making it identity-aware
+    would cost the whole "nothing is per-request" property `ReDocSite` is built on. It is a
+    visibility flag and **not** access control; say so wherever it is documented, because a reader
+    who assumes otherwise ships an open page.
   - `DarkThemeOptions` — customization surface: `PrimaryColor`/`PrimaryColorLight`/
     `PrimaryColorDark`/`AdditionalCss`, plus the font, `Favicon` and `PrintStyles` settings below.
     Everything else in the palette (success/warning/error/grays/etc.) is intentionally fixed —

@@ -28,6 +28,8 @@ internal sealed class ReDocDocumentsPlan
     private readonly ReDocDocumentsOptionsBase options;
     private readonly IReadOnlyList<ReDocLink> links;
 
+    private readonly IReadOnlyList<ReDocDocumentPage> listedPages;
+
     private ReDocDocumentsPlan(
         IReadOnlyList<ReDocDocumentPage> pages,
         IReadOnlyList<ReDocLink> links,
@@ -35,6 +37,9 @@ internal sealed class ReDocDocumentsPlan
         ReDocPrefixRedirect? redirect)
     {
         Pages = pages;
+        listedPages = pages.Any(page => page.Document.Unlisted)
+            ? [.. pages.Where(page => !page.Document.Unlisted)]
+            : pages;
         this.links = links;
         this.options = options;
         Redirect = redirect;
@@ -113,16 +118,34 @@ internal sealed class ReDocDocumentsPlan
     public string DocumentTitleOf(ReDocDocument doc) =>
         WebUtility.HtmlEncode(doc.DisplayName ?? doc.Name);
 
+    /// <summary>
+    /// The pages one page's picker lists: all of them from an unlisted page, and only the listed
+    /// ones from a listed page.
+    /// </summary>
+    /// <remarks>
+    /// Which entries a picker shows is decided here, at startup, and not per request — the page is
+    /// one string built once, and making it depend on who is asking would cost that. So the rule
+    /// is about the page doing the asking, not about its viewer: a page nobody is meant to find
+    /// shows everything, a page anyone can open shows only what anyone can open. The current page
+    /// is in its own list either way, which the script relies on.
+    /// </remarks>
+    public IReadOnlyList<ReDocDocumentPage> PickerPagesFrom(ReDocDocumentPage page) =>
+        page.Document.Unlisted ? Pages : listedPages;
+
+    /// <summary>Whether a page has anywhere to go, and so wants a picker at all.</summary>
+    public bool WantsPicker(ReDocDocumentPage page) =>
+        PickerPagesFrom(page).Count > 1 || links.Count > 0;
+
     /// <summary>The picker markup for one page, to append to that page's head content.</summary>
     public string PickerFor(ReDocDocumentPage page) =>
-        ReDocDocumentPicker.Build(Pages, links, page);
+        ReDocDocumentPicker.Build(PickerPagesFrom(page), links, page);
 
     /// <summary>
     /// The picker's script for one page, without the <c>&lt;script&gt;</c> tags: for a host that
     /// serves it as a file instead of inlining it into the page.
     /// </summary>
     public string PickerScriptFor(ReDocDocumentPage page) =>
-        ReDocDocumentPicker.BuildScript(Pages, links, page);
+        ReDocDocumentPicker.BuildScript(PickerPagesFrom(page), links, page);
 
     private static string RouteOf(ReDocDocument doc, string prefix)
     {

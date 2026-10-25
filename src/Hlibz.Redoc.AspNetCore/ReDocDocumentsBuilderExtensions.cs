@@ -20,13 +20,14 @@ public static class ReDocDocumentsBuilderExtensions
     /// <returns>
     /// A convention builder covering every endpoint this call adds — the pages, their stylesheet
     /// and scripts, and the shared ReDoc bundle — so <c>.RequireAuthorization()</c>,
-    /// <c>.CacheOutput()</c> and friends apply to all of them together.
+    /// <c>.CacheOutput()</c> and friends apply to all of them together, plus
+    /// <see cref="ReDocDocumentsConventionBuilder.ForDocument"/> for one document on its own.
     /// </returns>
     /// <remarks>
     /// Unlike the <see cref="UseReDocDocuments"/> middleware, endpoints carry metadata, which is
     /// the only way to put a documentation page behind a policy.
     /// </remarks>
-    public static IEndpointConventionBuilder MapReDocDocuments(
+    public static ReDocDocumentsConventionBuilder MapReDocDocuments(
         this IEndpointRouteBuilder endpoints,
         IEnumerable<ReDocDocument> documents,
         Action<ReDocDocumentsOptions>? configure = null)
@@ -40,6 +41,11 @@ public static class ReDocDocumentsBuilderExtensions
         ReDocSite site = ReDocSite.Build(endpoints.ServiceProvider, documents, options);
         List<IEndpointConventionBuilder> added = [];
 
+        // Per document as well as in one list: the shared endpoints below belong to the site, not
+        // to any one document, so they are in `added` and in no group.
+        Dictionary<string, ReDocDocumentsConventionBuilder.Group> byDocument =
+            new(StringComparer.OrdinalIgnoreCase);
+
         // Every handler is a RequestDelegate rather than a lambda with inferred parameters: the
         // Delegate overloads of MapGet reflect over their arguments, which this assembly's
         // IsAotCompatible promise doesn't allow.
@@ -47,11 +53,12 @@ public static class ReDocDocumentsBuilderExtensions
         {
             ReDocSitePage current = page;
             string route = current.Route.Length == 0 ? string.Empty : $"/{current.Route}";
+            List<IEndpointConventionBuilder> own = [];
 
             // A route pattern ignores its trailing slash, so this one endpoint also matches the
             // folder without it — which can't be a second endpoint, and mustn't serve the page
             // either, or every relative href on it would resolve against the parent folder.
-            added.Add(endpoints.MapGet($"{route}/", context =>
+            own.Add(endpoints.MapGet($"{route}/", context =>
             {
                 if (route.Length > 0 && !context.Request.Path.Value!.EndsWith('/'))
                 {
@@ -61,25 +68,27 @@ public static class ReDocDocumentsBuilderExtensions
 
                 return ReDocAssets.Write(context, current.Html, "text/html");
             }));
-            added.Add(endpoints.MapGet(
+            own.Add(endpoints.MapGet(
                 $"{route}/index.html",
                 context => ReDocAssets.Write(context, current.Html, "text/html")));
-            added.Add(endpoints.MapGet(
+            own.Add(endpoints.MapGet(
                 $"{route}/{ReDocPage.StyleFileName}",
                 context => ReDocAssets.Write(context, current.Css, "text/css")));
-            added.Add(endpoints.MapGet(
+            own.Add(endpoints.MapGet(
                 $"{route}/{ReDocPage.InitFileName}",
                 context => ReDocAssets.Write(context, current.InitScript, "text/javascript")));
-            added.Add(endpoints.MapGet(
+            own.Add(endpoints.MapGet(
                 $"{route}/{ReDocPage.ColorModeFileName}",
                 context => ReDocAssets.Write(context, current.ColorModeScript, "text/javascript")));
             if (current.PickerScript is { } picker)
             {
-                added.Add(endpoints.MapGet(
+                own.Add(endpoints.MapGet(
                     $"{route}/{ReDocPage.PickerFileName}",
                     context => ReDocAssets.Write(context, picker, "text/javascript")));
             }
 
+            added.AddRange(own);
+            byDocument[current.Name] = new ReDocDocumentsConventionBuilder.Group(own);
         }
 
         added.Add(endpoints.MapGet($"/{site.BundleRoute}", ReDocAssets.WriteBundle));
@@ -96,7 +105,7 @@ public static class ReDocDocumentsBuilderExtensions
                 }));
         }
 
-        return new CompositeConventionBuilder(added);
+        return new ReDocDocumentsConventionBuilder(added, byDocument);
     }
 
     /// <summary>
@@ -123,23 +132,4 @@ public static class ReDocDocumentsBuilderExtensions
         return app.Use((context, next) => site.Handle(context, next));
     }
 
-    private sealed class CompositeConventionBuilder(IReadOnlyList<IEndpointConventionBuilder> parts)
-        : IEndpointConventionBuilder
-    {
-        public void Add(Action<EndpointBuilder> convention)
-        {
-            foreach (IEndpointConventionBuilder part in parts)
-            {
-                part.Add(convention);
-            }
-        }
-
-        public void Finally(Action<EndpointBuilder> finalConvention)
-        {
-            foreach (IEndpointConventionBuilder part in parts)
-            {
-                part.Finally(finalConvention);
-            }
-        }
-    }
 }

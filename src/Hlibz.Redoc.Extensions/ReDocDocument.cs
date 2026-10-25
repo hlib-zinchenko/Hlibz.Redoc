@@ -21,8 +21,21 @@ namespace Hlibz.Redoc.Extensions;
 /// contain <c>/</c>; leading and trailing slashes are ignored, and an empty route serves the page
 /// at the app root. Defaults to <c>{RoutePrefix}/{Name}</c>.
 /// </param>
+/// <param name="Unlisted">
+/// Keeps this document out of the picker on <em>listed</em> documents' pages. Unlisted documents
+/// still list each other, and still list the rest, so someone who reaches one can navigate
+/// normally. Defaults to <see langword="false"/>.
+/// <para>
+/// This is the companion to per-document authorization: it hides the link, so a public page's
+/// dropdown doesn't advertise pages its viewer can't open. <strong>It protects nothing.</strong>
+/// The page is served to anyone who knows its URL unless something else stops them — on
+/// <c>Hlibz.Redoc.AspNetCore</c>, <c>MapReDocDocuments(...).ForDocument(name)</c> and a
+/// <c>RequireAuthorization</c> on it.
+/// </para>
+/// </param>
 public sealed record ReDocDocument(
     string Name,
     string? DisplayName = null,
     string? SpecUrl = null,
-    string? Route = null);
+    string? Route = null,
+    bool Unlisted = false);

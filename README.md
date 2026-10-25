@@ -129,11 +129,39 @@ app.MapReDocDocuments(documents).RequireAuthorization("InternalDocs");
 This is the reason to map endpoints rather than add middleware. With the existing hosts the page is
 middleware, which carries no metadata, so there is nowhere for a policy to attach.
 
-It is currently all-or-nothing: one builder covers the whole site, so you can't publish one document
-and gate the rest. If you need that, say so in an issue — it's on the list.
+For the more common shape — one public document, the rest not — gate them one at a time with
+`ForDocument`, and mark the gated ones `Unlisted` so the public page's picker doesn't offer them:
+
+```csharp
+ReDocDocumentsConventionBuilder docs = app.MapReDocDocuments(
+    [
+        new ReDocDocument("public", "Public API"),
+        new ReDocDocument("internal", "Internal API", Unlisted: true),
+    ]);
+
+docs.ForDocument("internal").RequireAuthorization("Employees");
+```
+
+`ForDocument` covers that document's page, stylesheet and scripts — the init script carries the spec
+URL, so gating the markup alone wouldn't be worth much — and **not** the shared ReDoc bundle. The
+bundle is one endpoint for the whole site, so gating it with a single document would stop every
+other page rendering, and it's ReDoc's own published JavaScript rather than anything of yours. An
+unknown document name throws rather than silently protecting nothing.
+
+`Unlisted` is a separate, deliberate step, because the two are not the same thing:
+
+- **`RequireAuthorization` protects the page. `Unlisted` only hides the link.** An unlisted document
+  is still served to anyone who knows its URL. Use both, not one.
+- An unlisted document is left out of the picker on *listed* pages only. Unlisted pages list
+  everything, so someone who can reach one can still navigate — and if a public page ends up with
+  nowhere to go, it gets no picker at all rather than a dropdown holding only itself.
+- The picker can't be audience-aware, because each page is built once at startup and served as a
+  fixed string to everyone. Deciding by the page asking rather than the viewer asking is what keeps
+  that true; see [the CSP section](#content-security-policy) for why nothing here is per-request.
 
 For an app that isn't using endpoint routing there's `app.UseReDocDocuments(documents, ...)`, which
-serves the same pages and takes the same options. Nothing can attach a policy to it.
+serves the same pages and takes the same options. Nothing can attach a policy to it, so `Unlisted`
+is all you get there.
 
 ## The bundle, and how it's served
 
@@ -484,6 +512,7 @@ in every document.
 | `DisplayName` | Label in the picker and the browser tab. Defaults to `Name`. |
 | `SpecUrl` | This document's spec URL, if it isn't at `SpecUrlTemplate`. |
 | `Route` | The page's path, e.g. `"reference/v2/taxes"`. Defaults to `{RoutePrefix}/{Name}`. |
+| `Unlisted` | Keep this document out of the picker on listed documents' pages. Hides the link; protects nothing. |
 
 | `ReDocDocumentsOptions`, the members every package has | |
 |---|---|

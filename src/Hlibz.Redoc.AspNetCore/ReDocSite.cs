@@ -51,17 +51,27 @@ internal sealed class ReDocSite
             ? $"{AssetFolder}/{ReDocBundle.FileName}"
             : $"{prefix}/{AssetFolder}/{ReDocBundle.FileName}";
 
-        // Only worth a picker when there is somewhere to go.
-        bool withPicker = plan.Pages.Count > 1 || options.Links.Count > 0;
         string colorModeScript = ReDocPage.ColorModeScript(options.DefaultColorMode);
-        string css = ReDocPage.Css(options, withPicker);
         string configJson = ReDocPage.ConfigJson(options);
+
+        // Two stylesheets at most, and usually one: whether a page carries the picker's rules
+        // follows whether it carries the picker, which an unlisted document can make differ from
+        // page to page.
+        string? cssWithPicker = null;
+        string? cssWithout = null;
 
         List<ReDocSitePage> pages = [];
         foreach (ReDocDocumentPage page in plan.Pages)
         {
+            // Only worth a picker when that page has somewhere to go.
+            bool withPicker = plan.WantsPicker(page);
+            string css = withPicker
+                ? cssWithPicker ??= ReDocPage.Css(options, withPicker: true)
+                : cssWithout ??= ReDocPage.Css(options, withPicker: false);
+
             pages.Add(new ReDocSitePage(
                 page.Route,
+                page.Document.Name,
                 ReDocPage.Html(plan.DocumentTitleOf(page.Document), options, withPicker),
                 css,
                 ReDocPage.InitScript(
@@ -135,6 +145,7 @@ internal sealed class ReDocSite
 /// <summary>One document's page and the files it references, all built at startup.</summary>
 internal sealed record ReDocSitePage(
     string Route,
+    string Name,
     string Html,
     string Css,
     string InitScript,

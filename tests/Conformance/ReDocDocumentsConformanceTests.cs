@@ -131,6 +131,33 @@ public class ReDocDocumentsConformanceTests
     }
 
     [Fact]
+    public async Task Picker_OnAListedPage_LeavesOutUnlistedDocuments()
+    {
+        Action<WebApplication> configure = app => app.UseReDocDocuments(
+            [
+                new ReDocDocument("locations", "Locations"),
+                new ReDocDocument("taxes", "Taxes"),
+                new ReDocDocument("payroll", "Payroll", Unlisted: true),
+            ]);
+
+        string listed = await GetPageAsync(configure, "/api-docs/taxes/index.html");
+        string unlisted = await GetPageAsync(configure, "/api-docs/payroll/index.html");
+
+        // Unlisted hides the entry from pages anyone can open, so a public picker doesn't
+        // advertise what its viewer probably can't reach. It protects nothing by itself.
+        Assert.Contains(
+            """var docs = [{"label":"Locations","href":"../../api-docs/locations/","current":false},""" +
+            """{"label":"Taxes","href":"../../api-docs/taxes/","current":true}];""",
+            listed);
+
+        // From the unlisted page itself, everything is listed: whoever is here can already read it.
+        Assert.Contains(
+            """{"label":"Payroll","href":"../../api-docs/payroll/","current":true}""", unlisted);
+        Assert.Contains(
+            """{"label":"Locations","href":"../../api-docs/locations/",""", unlisted);
+    }
+
+    [Fact]
     public async Task Picker_WithCustomRoutes_LinksAcrossDifferentDepths()
     {
         Action<WebApplication> configure = app => app.UseReDocDocuments(
