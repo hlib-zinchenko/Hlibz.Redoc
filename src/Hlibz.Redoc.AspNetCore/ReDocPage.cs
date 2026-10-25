@@ -27,11 +27,13 @@ internal static class ReDocPage
     public const string StyleFileName = "redoc-page.css";
     public const string PickerFileName = "redoc-picker.js";
     public const string ColorModeFileName = "redoc-colormode.js";
+    public const string ToolbarFileName = "redoc-toolbar.js";
 
     /// <summary>The <c>localStorage</c> key ReDoc 3 keeps the viewer's color mode under.</summary>
     private const string ColorModeKey = "redoc.colorMode";
 
-    public static string Html(string title, ReDocDocumentsOptions options, bool withPicker)
+    public static string Html(
+        string title, ReDocDocumentsOptions options, bool withPicker, bool withToolbarItems)
     {
         string? mode = options.DefaultColorMode switch
         {
@@ -77,15 +79,39 @@ internal static class ReDocPage
             page.Append($"<script src=\"{PickerFileName}\"></script>\n");
         }
 
+        if (withToolbarItems)
+        {
+            page.Append($"<script src=\"{ToolbarFileName}\"></script>\n");
+        }
+
         page.Append("</body>\n");
         page.Append("</html>\n");
         return page.ToString();
     }
 
     /// <summary>
-    /// Sets the color-mode class before the first paint, the same way ReDoc 3 does it inline.
-    /// Served as a file so no inline script is needed.
+    /// Sets the color-mode class before the first paint, the same way ReDoc 3 does it inline, and
+    /// records a configured default under ReDoc's own storage key. Served as a file so no inline
+    /// script is needed.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Setting the class is not enough on its own, which is only visible once you try it: ReDoc's
+    /// store resolves the mode as <c>localStorage['redoc.colorMode']</c> first and its own cookie
+    /// second, falling back to <c>prefers-color-scheme</c>, and then writes the class itself. With
+    /// that key empty — a first-time viewer — it would resolve the mode from the viewer's OS and
+    /// overwrite whatever the server stamped, so a configured
+    /// <see cref="ReDocColorMode.Light"/> or <see cref="ReDocColorMode.Dark"/> did nothing at all
+    /// for the people it is meant for. Writing the key is what makes the setting hold, and it is
+    /// ReDoc's own key, read by ReDoc's own code.
+    /// </para>
+    /// <para>
+    /// Only a configured Light or Dark is written. <see cref="ReDocColorMode.System"/> leaves the
+    /// key alone, so the page keeps following the viewer's OS rather than being pinned to whatever
+    /// it happened to be on their first visit. A viewer who has chosen a mode already always wins:
+    /// their value is in that key and nothing here overwrites it.
+    /// </para>
+    /// </remarks>
     public static string ColorModeScript(ReDocColorMode fallback)
     {
         string fallbackValue = fallback switch
@@ -96,11 +122,18 @@ internal static class ReDocPage
                 + "? 'dark' : 'light')",
         };
 
+        // Nothing is persisted for System: the point of System is to keep following the OS.
+        string persist = fallback == ReDocColorMode.System
+            ? string.Empty
+            : $"\n    try {{ localStorage.setItem('{ColorModeKey}', mode); }} catch (e) {{ }}";
+
         return $$"""
             (function () {
               var mode;
               try { mode = localStorage.getItem('{{ColorModeKey}}'); } catch (e) { }
-              if (mode !== 'light' && mode !== 'dark') { mode = {{fallbackValue}}; }
+              if (mode !== 'light' && mode !== 'dark') {
+                mode = {{fallbackValue}};{{persist}}
+              }
               var root = document.documentElement;
               root.classList.remove('light', 'dark');
               root.classList.add(mode);
@@ -141,6 +174,80 @@ internal static class ReDocPage
         return Encoding.UTF8.GetString(buffer.ToArray());
     }
 
+    /// <summary>
+    /// The toolbar's links, as the script that appends them to the shared container.
+    /// </summary>
+    /// <remarks>
+    /// Written with <see cref="Utf8JsonWriter"/> rather than serialized, for the same reason the
+    /// config is: a slim or AOT host has reflection-based serialization off. The anchors are built
+    /// through <c>textContent</c> and <c>setAttribute</c>, never <c>innerHTML</c>, so a label with
+    /// markup in it is text on the page rather than markup in it.
+    /// </remarks>
+    public static string ToolbarScript(IEnumerable<ReDocToolbarItem> items, string currentRoute)
+    {
+        using MemoryStream buffer = new();
+        using (Utf8JsonWriter writer = new(buffer, new JsonWriterOptions { Indented = false }))
+        {
+            writer.WriteStartArray();
+            foreach (ReDocToolbarItem item in items)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("label", item.Label);
+                writer.WriteString("href", ResolveUrl(item.Url, currentRoute));
+                if (item.NewTab)
+                {
+                    writer.WriteBoolean("newTab", true);
+                }
+
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+        }
+
+        string json = Encoding.UTF8.GetString(buffer.ToArray());
+
+        return $$"""
+            (function () {
+              var items = {{json}};
+
+            {{ReDocToolbar.ScriptFunction}}
+
+              function render() {
+                var toolbar = hlibzToolbar();
+                items.forEach(function (item) {
+                  var link = document.createElement('a');
+                  link.className = 'hlibz-toolbar-item';
+                  link.href = item.href;
+                  link.textContent = item.label;
+                  if (item.newTab) {
+                    link.target = '_blank';
+                    link.rel = 'noopener';
+                  }
+                  toolbar.appendChild(link);
+                });
+              }
+
+              if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', render);
+              } else {
+                render();
+              }
+            })();
+
+            """;
+    }
+
+    /// <summary>
+    /// A link URL as the page should carry it: <c>~/</c> resolved relative to this page's own
+    /// route depth, anything else left alone. The same rule <see cref="ReDocLink"/> follows, so
+    /// an href needs no knowledge of the <c>PathBase</c> and survives a path-rewriting proxy.
+    /// </summary>
+    private static string ResolveUrl(string url, string currentRoute) =>
+        url.StartsWith("~/", StringComparison.Ordinal)
+            ? ReDocRelativePath.Between(currentRoute, url[2..])
+            : url;
+
     /// <summary>The page's stylesheet: our own rules, then whatever the caller added.</summary>
     public static string Css(ReDocDocumentsOptions options, bool withPicker)
     {
@@ -170,12 +277,123 @@ internal static class ReDocPage
             css.Append(ReDocDocumentPicker.Css).Append('\n');
         }
 
+        if (options.ToolbarItems.Count > 0)
+        {
+            css.Append(ReDocToolbar.ItemCss).Append('\n');
+        }
+
+        AppendBrandCss(css, options);
+        if (options.PrintStyles)
+        {
+            AppendPrintCss(css, options);
+        }
+
         if (!string.IsNullOrWhiteSpace(options.AdditionalCss))
         {
             css.Append('\n').Append(options.AdditionalCss.Trim()).Append('\n');
         }
 
         return css.ToString();
+    }
+
+    /// <summary>
+    /// The accent, as the two variables ReDoc's accent actually comes from.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The doubled selectors are not a typo, and they are the whole difficulty of this feature.
+    /// ReDoc defines its palette on <c>:root</c> and <c>:root.dark</c> from a
+    /// <c>&lt;style&gt;</c> that styled-components injects into the head at runtime — which is
+    /// after this stylesheet's <c>&lt;link&gt;</c>, so at equal specificity ReDoc wins on source
+    /// order. <c>:root:root</c> and <c>:root:root.dark</c> each outweigh the rule they have to
+    /// beat by one class, and nothing about the order matters any more.
+    /// </para>
+    /// <para>
+    /// Dark is stated as <c>.dark</c> on the root for the same reason ReDoc does: that is the
+    /// class the color mode is stamped with. This package's own controls read
+    /// <c>--color-primary-base</c>, so they follow the accent with no extra rule.
+    /// </para>
+    /// </remarks>
+    private static void AppendBrandCss(StringBuilder css, ReDocDocumentsOptions options)
+    {
+        if (options.PrimaryColor is { } accent)
+        {
+            css.Append('\n')
+                .Append(":root:root {\n")
+                .Append($"  --color-primary-base: {accent};\n")
+                .Append($"  --link-color-primary: {accent};\n")
+                .Append("}\n");
+        }
+
+        if (options.DarkModePrimaryColor is { } darkAccent)
+        {
+            css.Append('\n')
+                .Append(":root:root.dark {\n")
+                .Append($"  --color-primary-base: {darkAccent};\n")
+                .Append($"  --link-color-primary: {darkAccent};\n")
+                .Append("}\n");
+        }
+    }
+
+    /// <summary>
+    /// What printing needs that ReDoc 3 doesn't already do for itself.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// ReDoc 3 ships <c>@media print</c> rules that hide its sidebar and its buttons and give the
+    /// panels the full page width, so none of that is repeated here — unlike the ReDoc 2 adapters,
+    /// where the print stylesheet has to do the whole job. Two things are left.
+    /// </para>
+    /// <para>
+    /// The toolbar is this package's own and ReDoc's rules can't know about it, so it goes.
+    /// </para>
+    /// <para>
+    /// And color: browsers omit background colors when printing but keep text colors, so a page
+    /// printed while in dark mode is near-white text on white paper. ReDoc 3's dark mode turns out
+    /// to be the grey ramp reversed — every semantic token reads
+    /// <c>var(--color-warm-grey-N)</c> in both modes, and only those eleven values differ — so
+    /// restoring the light ramp for the printed copy is the entire fix, and everything derived
+    /// from it (text, borders, panels, code blocks) follows. Measured in the browser against
+    /// 3.0.1; the two ramps are exact mirrors of each other.
+    /// </para>
+    /// </remarks>
+    private static void AppendPrintCss(StringBuilder css, ReDocDocumentsOptions options)
+    {
+        css.Append("""
+
+            @media print {
+              .hlibz-toolbar { display: none !important; }
+
+              :root:root.dark {
+                --color-warm-grey-1: #fbfbfc;
+                --color-warm-grey-2: #ededf2;
+                --color-warm-grey-3: #dcdde5;
+                --color-warm-grey-4: #c4c6d1;
+                --color-warm-grey-5: #9b9ca8;
+                --color-warm-grey-6: #6e6f7a;
+                --color-warm-grey-7: #555761;
+                --color-warm-grey-8: #3b3c45;
+                --color-warm-grey-9: #2a2b33;
+                --color-warm-grey-10: #22242b;
+                --color-warm-grey-11: #1a1c21;
+              }
+
+            """);
+
+        // The dark accent was chosen to carry on a near-black page; on paper the light one is the
+        // right choice, and it is already known to work against a light background.
+        if (options.DarkModePrimaryColor is not null && options.PrimaryColor is { } accent)
+        {
+            css.Append($$"""
+                  :root:root.dark {
+                    --color-primary-base: {{accent}};
+                    --link-color-primary: {{accent}};
+                  }
+
+                """);
+        }
+
+        css.Append("}\n");
     }
 
     /// <summary>

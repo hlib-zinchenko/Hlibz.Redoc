@@ -36,7 +36,8 @@ internal sealed class ReDocTestApp : IAsyncDisposable
         IEnumerable<ReDocDocument>? documents = null,
         Action<ReDocDocumentsOptions>? configure = null,
         string pathBase = "",
-        Action<WebApplicationBuilder>? configureServices = null)
+        Action<WebApplicationBuilder>? configureServices = null,
+        Action<WebApplication>? configureApp = null)
     {
         WebApplicationBuilder builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
@@ -47,6 +48,9 @@ internal sealed class ReDocTestApp : IAsyncDisposable
         {
             app.UsePathBase(pathBase);
         }
+
+        // Before the pages are mapped, which is where an app's own middleware would sit.
+        configureApp?.Invoke(app);
 
         app.MapReDocDocuments(documents ?? DefaultDocuments, configure);
         await app.StartAsync();

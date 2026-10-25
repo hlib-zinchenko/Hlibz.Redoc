@@ -25,11 +25,15 @@ internal sealed class ReDocSite
     private ReDocSite(
         IReadOnlyList<ReDocSitePage> pages,
         string bundleRoute,
-        ReDocPrefixRedirect? redirect)
+        ReDocPrefixRedirect? redirect,
+        string? contentSecurityPolicy,
+        ReDocLastDocument? lastDocument)
     {
         Pages = pages;
         BundleRoute = bundleRoute;
         Redirect = redirect;
+        ContentSecurityPolicy = contentSecurityPolicy;
+        LastDocument = lastDocument;
     }
 
     public IReadOnlyList<ReDocSitePage> Pages { get; }
@@ -38,6 +42,41 @@ internal sealed class ReDocSite
     public string BundleRoute { get; }
 
     public ReDocPrefixRedirect? Redirect { get; }
+
+    /// <summary>The policy to send with each page, or <see langword="null"/> to send none.</summary>
+    public string? ContentSecurityPolicy { get; }
+
+    /// <summary>
+    /// Where the prefix sends a returning viewer, or <see langword="null"/> when the site always
+    /// sends them to the first document.
+    /// </summary>
+    public ReDocLastDocument? LastDocument { get; }
+
+    /// <summary>
+    /// Serves a page and, where the site remembers them, notes which document it was.
+    /// </summary>
+    public Task WritePage(HttpContext context, ReDocSitePage page)
+    {
+        LastDocument?.Remember(context, page.Name);
+        return ReDocAssets.WritePage(context, page.Html, ContentSecurityPolicy);
+    }
+
+    /// <summary>
+    /// Where a request for the route prefix should go: the document this viewer was last reading,
+    /// or the site's first one.
+    /// </summary>
+    public string RedirectTargetFor(HttpContext context, ReDocPrefixRedirect redirect)
+    {
+        string? remembered = LastDocument?.RouteFor(context);
+        string path = remembered switch
+        {
+            null => redirect.To,
+            "" => "/",
+            _ => $"/{remembered}/",
+        };
+
+        return $"{context.Request.PathBase}{path}";
+    }
 
     public static ReDocSite Build(
         IServiceProvider services,
@@ -60,6 +99,8 @@ internal sealed class ReDocSite
         string? cssWithPicker = null;
         string? cssWithout = null;
 
+        bool withToolbarItems = options.ToolbarItems.Count > 0;
+
         List<ReDocSitePage> pages = [];
         foreach (ReDocDocumentPage page in plan.Pages)
         {
@@ -72,17 +113,31 @@ internal sealed class ReDocSite
             pages.Add(new ReDocSitePage(
                 page.Route,
                 page.Document.Name,
-                ReDocPage.Html(plan.DocumentTitleOf(page.Document), options, withPicker),
+                ReDocPage.Html(
+                    plan.DocumentTitleOf(page.Document), options, withPicker, withToolbarItems),
                 css,
                 ReDocPage.InitScript(
                     ReDocRelativePath.Between(page.Route, bundleRoute),
                     plan.SpecUrlOf(page.Document),
                     configJson),
                 colorModeScript,
-                withPicker ? plan.PickerScriptFor(page) : null));
+                withPicker ? plan.PickerScriptFor(page) : null,
+                // Per page rather than once for the site: a `~/` item resolves against the page's
+                // own route depth, the same way the picker's links do.
+                withToolbarItems
+                    ? ReDocPage.ToolbarScript(options.ToolbarItems, page.Route)
+                    : null,
+                page.Document.Unlisted));
         }
 
-        return new ReDocSite(pages, bundleRoute, plan.Redirect);
+        return new ReDocSite(
+            pages,
+            bundleRoute,
+            plan.Redirect,
+            options.ContentSecurityPolicy,
+            options.RememberLastDocument
+                ? new ReDocLastDocument(pages, prefix.Length == 0 ? string.Empty : $"/{prefix}")
+                : null);
     }
 
     /// <summary>
@@ -100,7 +155,7 @@ internal sealed class ReDocSite
 
         if (Redirect is { } redirect && redirect.Matches(context.Request.Path))
         {
-            context.Response.Redirect($"{context.Request.PathBase}{redirect.To}");
+            context.Response.Redirect(RedirectTargetFor(context, redirect));
             return Task.CompletedTask;
         }
 
@@ -126,7 +181,7 @@ internal sealed class ReDocSite
 
             return file switch
             {
-                "" or "index.html" => ReDocAssets.Write(context, page.Html, "text/html"),
+                "" or "index.html" => WritePage(context, page),
                 ReDocPage.StyleFileName => ReDocAssets.Write(context, page.Css, "text/css"),
                 ReDocPage.InitFileName =>
                     ReDocAssets.Write(context, page.InitScript, "text/javascript"),
@@ -134,6 +189,8 @@ internal sealed class ReDocSite
                     ReDocAssets.Write(context, page.ColorModeScript, "text/javascript"),
                 ReDocPage.PickerFileName when page.PickerScript is not null =>
                     ReDocAssets.Write(context, page.PickerScript, "text/javascript"),
+                ReDocPage.ToolbarFileName when page.ToolbarScript is not null =>
+                    ReDocAssets.Write(context, page.ToolbarScript, "text/javascript"),
                 _ => next(context),
             };
         }
@@ -150,7 +207,9 @@ internal sealed record ReDocSitePage(
     string Css,
     string InitScript,
     string ColorModeScript,
-    string? PickerScript)
+    string? PickerScript,
+    string? ToolbarScript,
+    bool Unlisted)
 {
     /// <summary>
     /// The last segment of the route, which is what the page's own folder is called — the target

@@ -38,10 +38,12 @@
     <ProjectReference Include="..\Hlibz.Redoc.Extensions\Hlibz.Redoc.Extensions.csproj" />
   </ItemGroup>
 
-  <!-- The bundle is served straight out of the assembly. assets/README.md records where it came
-       from and how to upgrade it; it isn't an embedded resource. -->
+  <!-- The bundle is served straight out of the assembly, pre-compressed both ways so no request
+       ever pays for compression. assets/README.md records where it came from and how to upgrade
+       it; it isn't an embedded resource. -->
   <ItemGroup>
     <EmbeddedResource Include="assets\redoc.standalone.js.gz" LogicalName="redoc.standalone.js.gz" />
+    <EmbeddedResource Include="assets\redoc.standalone.js.br" LogicalName="redoc.standalone.js.br" />
     <None Include="assets\README.md" />
   </ItemGroup>
 

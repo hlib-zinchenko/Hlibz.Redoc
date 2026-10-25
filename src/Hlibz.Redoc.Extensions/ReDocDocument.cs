@@ -21,6 +21,16 @@ namespace Hlibz.Redoc.Extensions;
 /// contain <c>/</c>; leading and trailing slashes are ignored, and an empty route serves the page
 /// at the app root. Defaults to <c>{RoutePrefix}/{Name}</c>.
 /// </param>
+/// <param name="Group">
+/// Heading this document sits under in the picker, as an <c>&lt;optgroup&gt;</c> — e.g. <c>"v2"</c>
+/// so the versions of one API sit together. Defaults to <see langword="null"/>, which puts it
+/// directly in the list.
+/// <para>
+/// Documents keep the order you give them, and a group appears where its first member does, so
+/// grouped and ungrouped documents can be mixed. The heading is a label only: it isn't selectable
+/// and it changes no route.
+/// </para>
+/// </param>
 /// <param name="Unlisted">
 /// Keeps this document out of the picker on <em>listed</em> documents' pages. Unlisted documents
 /// still list each other, and still list the rest, so someone who reaches one can navigate
@@ -38,4 +48,5 @@ public sealed record ReDocDocument(
     string? DisplayName = null,
     string? SpecUrl = null,
     string? Route = null,
-    bool Unlisted = false);
+    bool Unlisted = false,
+    string? Group = null);

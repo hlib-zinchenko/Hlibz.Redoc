@@ -66,11 +66,11 @@ public static class ReDocDocumentsBuilderExtensions
                     return Task.CompletedTask;
                 }
 
-                return ReDocAssets.Write(context, current.Html, "text/html");
+                return site.WritePage(context, current);
             }));
             own.Add(endpoints.MapGet(
                 $"{route}/index.html",
-                context => ReDocAssets.Write(context, current.Html, "text/html")));
+                context => site.WritePage(context, current)));
             own.Add(endpoints.MapGet(
                 $"{route}/{ReDocPage.StyleFileName}",
                 context => ReDocAssets.Write(context, current.Css, "text/css")));
@@ -87,6 +87,13 @@ public static class ReDocDocumentsBuilderExtensions
                     context => ReDocAssets.Write(context, picker, "text/javascript")));
             }
 
+            if (current.ToolbarScript is { } toolbar)
+            {
+                own.Add(endpoints.MapGet(
+                    $"{route}/{ReDocPage.ToolbarFileName}",
+                    context => ReDocAssets.Write(context, toolbar, "text/javascript")));
+            }
+
             added.AddRange(own);
             byDocument[current.Name] = new ReDocDocumentsConventionBuilder.Group(own);
         }
@@ -100,7 +107,7 @@ public static class ReDocDocumentsBuilderExtensions
                 context =>
                 {
                     context.Response.Redirect(
-                        $"{context.Request.PathBase}{redirect.To}", permanent: false);
+                        site.RedirectTargetFor(context, redirect), permanent: false);
                     return Task.CompletedTask;
                 }));
         }

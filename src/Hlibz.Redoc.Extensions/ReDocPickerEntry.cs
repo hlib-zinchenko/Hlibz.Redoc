@@ -8,10 +8,18 @@ namespace Hlibz.Redoc.Extensions;
 /// <param name="Label">Text shown in the dropdown.</param>
 /// <param name="Href">Where selecting it navigates, relative to the current page.</param>
 /// <param name="Current">Whether this entry is the page being viewed.</param>
+/// <param name="Group">
+/// The <c>&lt;optgroup&gt;</c> this entry belongs in, or <see langword="null"/> to sit directly in
+/// the list. Omitted from the JSON when null, so a site that groups nothing serves exactly the
+/// bytes it served before groups existed.
+/// </param>
 internal sealed record ReDocPickerEntry(
     [property: JsonPropertyName("label")] string Label,
     [property: JsonPropertyName("href")] string Href,
-    [property: JsonPropertyName("current")] bool Current = false);
+    [property: JsonPropertyName("current")] bool Current = false,
+    [property: JsonPropertyName("group")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Group = null);
 
 /// <summary>
 /// Source-generated serialization for <see cref="ReDocPickerEntry"/>, so the package stays

@@ -94,28 +94,115 @@ the first byte goes out, and the rest is done by a served script that reads ReDo
 ReDoc does that part with an *inline* script, which a strict CSP blocks — so without this the page
 would render light for a moment first.
 
+A configured `Light` or `Dark` is also recorded under that key, `localStorage['redoc.colorMode']`,
+for a viewer who has no preference stored yet. That is not belt-and-braces: ReDoc's store resolves
+the mode from that key first and `prefers-color-scheme` last and then sets the class *itself*, so
+stamping the markup alone gets overwritten and the setting does nothing for precisely the
+first-time viewers it is meant for. A viewer who has chosen a mode already keeps it — their value
+is in that key and nothing here overwrites it — and `System` writes nothing at all, so the page
+goes on following the OS rather than being pinned to whatever it was on their first visit.
+
+## Printing
+
+Printed pages come out light whatever mode the screen is in, and without the picker or the toolbar.
+Set `PrintStyles = false` to leave printing entirely to ReDoc.
+
+ReDoc 3 does most of this itself — its own `@media print` rules hide its sidebar and buttons and
+give the panels the full width — so there is far less here than in the dark theme for ReDoc 2. What
+it doesn't handle is color: browsers drop background colors when printing but keep text colors, so
+a page printed from dark mode would be near-white text on white paper. ReDoc 3's dark mode turns
+out to be its grey ramp reversed — every semantic token reads `var(--color-warm-grey-N)` in both
+modes, and only those eleven values differ — so putting the light ramp back for the printed copy
+fixes text, borders, panels and code blocks in one go. If you set both accents, the printed copy
+uses `PrimaryColor`: the dark one was chosen to carry on a near-black page, not on paper.
+
+## Toolbar links
+
+The top-right toolbar — the thing the document picker sits in — takes links of your own:
+
+```csharp
+docs.AddToolbarItem("Postman collection", "~/postman/widgets.json", newTab: true)
+    .AddToolbarItem("Changelog", "/changelog");
+```
+
+They render as buttons after the picker, in the order you add them, and they take their colors from
+the same tokens the picker does, so they follow the color mode and your accent without being told.
+A `~/` URL resolves against the app's base path like everything else here, so it survives a
+`PathBase` or a path-rewriting proxy; an absolute URL or a root-relative path is used as-is.
+
+This is for the links a documentation site wants and this package shouldn't ship one at a time: a
+Postman collection, a changelog, the dev portal, a "Try it" console rendered by something else. For
+a link to **another ReDoc page of your own**, prefer `Links`, which lists it inside the picker where
+a reader is already looking for documents.
+
+A toolbar item is a link and nothing else — there is deliberately no raw HTML, CSS or JS escape
+hatch. Markup or a script supplied per page would have to be inlined into it, and a page with
+anything inline needs `'unsafe-inline'` or a nonce in `script-src`, which is the one property this
+package exists to keep. `AdditionalCss` is served as a file and can restyle these buttons as far as
+CSS reaches.
+
+Toolbar links are `Hlibz.Redoc.AspNetCore` only. On the adapters the toolbar reaches the page
+through the picker's inlined script, so a single-document site — which has no picker — would have
+nowhere to put them.
+
+## Remembering the last document
+
+`docs.RememberLastDocument = true` makes `/{RoutePrefix}` send a returning viewer back to the
+document they were last reading, instead of always to the first one.
+
+It is off unless you ask for it, because it costs a cookie: `hlibz.redoc.document`, holding a
+document name, set on each page. Some people would rather have documentation that sets no cookies
+at all than have this. It's `HttpOnly`, `SameSite=Lax`, `Secure` over HTTPS, scoped to the route
+prefix, and it expires after a year.
+
+The cookie is a name to look up, never a path to follow, so a stale or hand-edited one falls back to
+the first document rather than going anywhere of its own choosing. `Unlisted` documents aren't
+remembered: an unlisted document is usually the gated one, and sending a viewer whose access has
+lapsed to a page that answers 401 is worse than sending them to the public one.
+
 ## Brand color, and anything else CSS can reach
 
-ReDoc 3 is themed entirely through CSS custom properties — there is no `theme` config object any
-more — so you set variables:
+The accent is a property:
+
+```csharp
+docs.PrimaryColor = "#c026d3";
+docs.DarkModePrimaryColor = "#e879f9";   // optional; a hue picked for a white page is
+                                         // usually too dark on a near-black one
+```
+
+Any CSS color works — hex, `rgb()`, `oklch()`, a named color, or a `var()` pointing at your own
+design tokens. `DarkModePrimaryColor` is named for the color mode and not for a shade: unlike the
+adapters' `DarkThemeOptions.PrimaryColorDark`, it is the whole accent while `html.dark` is in
+effect, not a darker version of one.
+
+Each property writes **two** variables, because ReDoc's accent isn't a single token:
+`--color-primary-base` is the root one and derived tokens fall back to it (primary buttons, link
+underlines, deep-link icons all follow it), but link *text* reads `--link-color-primary`, which has
+a default of its own. That pair is the whole reason this is a property rather than a line of CSS —
+finding the second name took a session in devtools.
+
+For anything else, ReDoc 3 is themed entirely through CSS custom properties — there is no `theme`
+config object any more — so you set variables yourself:
 
 ```csharp
 docs.AdditionalCss = """
-    :root     { --color-primary-base: #c026d3; --link-color-primary: #c026d3; }
-    html.dark { --color-primary-base: #e879f9; --link-color-primary: #e879f9; }
+    :root     { --bg-color: #fffdf7; }
+    html.dark { --bg-color: #0b0b0f; }
     """;
 ```
 
-That CSS is appended to the page's stylesheet, which is served as a file like everything else. This
-package's own controls (the toolbar and the picker) read ReDoc's variables rather than carrying a
-palette, so they follow both the color mode and your accent color without being told.
+That CSS is appended to the page's stylesheet, which is served as a file like everything else, and
+it comes **after** the accent above, so it wins at equal specificity. This package's own controls
+(the toolbar and the picker) read ReDoc's variables rather than carrying a palette, so they follow
+both the color mode and your accent color without being told.
 
-Two variables rather than one because ReDoc's accent isn't a single token:
-`--color-primary-base` is the root one and derived tokens fall back to it (primary buttons, link
-underlines, deep-link icons all follow it), but link *text* reads `--link-color-primary`, which has
-its own default. There are around 2,900 of these variables in total and no published map of them,
-so for anything beyond the accent, inspect the element in devtools and override the variable it
-actually reads.
+There are around 2,900 of these variables and no published map of them, so for anything beyond the
+accent, inspect the element in devtools and override the variable it actually reads.
+
+A color value lands in a stylesheet, so `PrimaryColor` is checked when you set it: anything that
+could end the declaration or open a new rule throws there rather than serving a page with a broken
+stylesheet. It is not a color parser, though — a value CSS doesn't understand is simply ignored by
+the browser, the same as any other typo in CSS.
 
 ## Authorization, caching and anything else endpoints can carry
 
@@ -167,11 +254,21 @@ is all you get there.
 
 | | |
 |---|---|
-| ReDoc | 3.0.1, MIT, checked into this repo gzipped and embedded in the assembly |
-| Served as | the stored gzip bytes, `Content-Encoding: gzip`, decompressed only for a client that won't take it |
-| Size on the wire | 649 KB |
-| Caching | `Cache-Control: public, max-age=31536000, immutable` plus a strong ETag, so a revalidation is a 304 |
+| ReDoc | 3.0.1, MIT, checked into this repo pre-compressed and embedded in the assembly |
+| Served as | the stored bytes for whichever encoding the request accepts — nothing is compressed or decompressed per request |
+| Size on the wire | **507 KB** brotli, 634 KB gzip, 2.2 MB for a client that takes neither |
+| Caching | `Cache-Control: public, max-age=31536000, immutable`, `Vary: Accept-Encoding`, and a strong ETag per encoding, so a revalidation is a 304 |
 | URL | `{RoutePrefix}/_redoc/redoc.standalone.js`, once for the whole site — switching documents re-downloads nothing |
+
+Both encodings are built at quality 11 before the file is ever checked in, which is affordable
+exactly because the bundle is fixed for the life of a package version. Response-compression
+middleware can't do that: it pays a much cheaper setting, over and over, on every cache miss. If
+you have such middleware in the pipeline it has nothing to do here — the response already carries a
+`Content-Encoding`.
+
+Brotli is preferred wherever the request accepts it, and `Accept-Encoding` is parsed rather than
+searched, so `br;q=0` means what it says. The ETag differs per encoding because these are different
+representations of one resource.
 
 For comparison: Redoc.AspNetCore sends its bundle uncompressed with no `Cache-Control` at all, and
 Swashbuckle sends `max-age=0`.
@@ -187,7 +284,13 @@ call a third party unless they asked for it.
 
 ## Content Security Policy
 
-This is the policy the pages are actually served under in
+One call serves the pages under the policy they are known to work under:
+
+```csharp
+app.MapReDocDocuments(documents, docs => docs.UseDefaultContentSecurityPolicy());
+```
+
+That is the policy the pages are actually served under in
 [`samples/Sample.Own`](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/samples/Sample.Own/Program.cs),
 so the sample proves it rather than this README asserting it. Every allowance in it beyond
 `default-src 'self'` is there because a blocked request said so:
@@ -205,6 +308,21 @@ object-src 'none';
 base-uri 'none'
 ```
 
+It is sent with the **pages** and nothing else: a policy on the stylesheet or the scripts they load
+changes nothing, because the page's own policy already decides what the page may load. A policy
+your own middleware has already set is left alone — yours covers the whole app and should be the
+one that holds — so this is for the case where these pages are the only ones with a policy, not a
+way to override one.
+
+Set `ContentSecurityPolicy` yourself for anything else; `ReDocDocumentsOptions.DefaultContentSecurityPolicy`
+is the string above, to start from. Two allowances in it depend on things outside this package:
+
+- **`connect-src 'self'`** assumes the spec is served from this origin. A spec elsewhere needs that
+  origin added, or ReDoc can't fetch it.
+- **`img-src … https://cdn.redoc.ly`** is the "API docs by Redocly" badge, which ReDoc's own bundle
+  fetches from there. Drop it and the badge quietly removes itself (the bundle hides the image when
+  it fails to load) — the words "API docs by" remain, and no third-party request is made.
+
 Two things worth knowing:
 
 - **No nonce, anywhere.** `script-src 'self'` is enough because nothing is inline: the ReDoc config,
@@ -216,16 +334,19 @@ Two things worth knowing:
   nothing. So a nonce-only `style-src` is not an option on this package, and no amount of owning
   the template changes that.
 
-`https://cdn.redoc.ly` is the "API docs by Redocly" badge, which every ReDoc version fetches from a
-third-party CDN on every page load. Drop it from `img-src` if you'd rather it didn't load.
-
 ## Options
 
 | `ReDocDocumentsOptions` | |
 |---|---|
 | `DefaultColorMode` | What a first-time viewer sees: `System` (default), `Light` or `Dark`. |
 | `Favicon` | `href` for the page's `<link rel="icon">`. Unset, browsers ask for `/favicon.ico`. |
-| `AdditionalCss` | Appended to the page's stylesheet. |
+| `PrimaryColor` | The accent, as any CSS color. Writes `--color-primary-base` and `--link-color-primary` under `:root`. |
+| `DarkModePrimaryColor` | The accent while `html.dark` is in effect, when it should differ. Defaults to `PrimaryColor`. |
+| `AdditionalCss` | Appended to the page's stylesheet, after the accent. |
+| `ContentSecurityPolicy` | Sent with each page. Unset, none is sent; `UseDefaultContentSecurityPolicy()` sets the verified one. A policy your own middleware already set is left alone. |
+| `PrintStyles` | Print the page light, without the toolbar. Defaults to `true`. |
+| `AddToolbarItem(label, url, newTab)` | Adds a link button to the toolbar, beside the picker. `ToolbarItems` is the list behind it. |
+| `RememberLastDocument` | `/{RoutePrefix}` returns you to the document you were last reading. Defaults to `false`; sets a cookie when on. |
 | `HideDownloadButton` | Hide ReDoc's "Download OpenAPI description" button. |
 | `RequiredPropsFirst` | List required properties before optional ones in schemas. |
 | `EnableTelemetry` | Defaults to `false`, which emits `disableTelemetry: true`. |
@@ -506,6 +627,24 @@ first. Each document reads its spec from `/openapi/{documentName}.json`, which i
 Tag every endpoint with `.WithGroupName(...)`. By default, an endpoint without a group name appears
 in every document.
 
+## Grouping documents in the picker
+
+Give documents a `Group` and the picker puts them under a heading, as an `<optgroup>` — what you
+want once there are several versions of one API:
+
+```csharp
+app.MapReDocDocuments(
+    [
+        new ReDocDocument("overview", "Overview"),
+        new ReDocDocument("payments-v1", "Payments v1", Group: "Payments"),
+        new ReDocDocument("payments-v2", "Payments v2", Group: "Payments"),
+    ]);
+```
+
+Documents keep the order you give them, and a group appears where its first member does, so grouped
+and ungrouped ones mix freely — `Overview` stays at the top of the list above. The heading is a
+label: it isn't selectable and it changes no route. This works on all three packages.
+
 | `ReDocDocument` | |
 |---|---|
 | `Name` | The OpenAPI document name, as passed to `AddOpenApi(name)`. |
@@ -513,6 +652,7 @@ in every document.
 | `SpecUrl` | This document's spec URL, if it isn't at `SpecUrlTemplate`. |
 | `Route` | The page's path, e.g. `"reference/v2/taxes"`. Defaults to `{RoutePrefix}/{Name}`. |
 | `Unlisted` | Keep this document out of the picker on listed documents' pages. Hides the link; protects nothing. |
+| `Group` | Heading this document sits under in the picker, as an `<optgroup>`. |
 
 | `ReDocDocumentsOptions`, the members every package has | |
 |---|---|

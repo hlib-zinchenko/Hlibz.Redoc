@@ -102,7 +102,7 @@ internal static class ReDocDocumentPicker
                 return option;
               }
 
-              function render() {
+            {{GROUP_FUNCTION}}  function render() {
                 var picker = document.createElement('label');
                 picker.className = 'hlibz-doc-picker';
                 picker.innerHTML =
@@ -113,7 +113,7 @@ internal static class ReDocDocumentPicker
                 select.setAttribute('aria-label', 'API document');
                 var currentOption;
                 docs.forEach(function (doc) {
-                  var option = addOption(select, doc);
+                  var option = addOption({{DOC_PARENT}}, doc);
                   if (doc.current) { currentOption = option; }
                 });
                 if (links.length) {
@@ -153,8 +153,13 @@ internal static class ReDocDocumentPicker
                     page.Route.Length == 0
                         ? string.Empty
                         : $"{ReDocRelativePath.EscapeRoute(page.Route)}/"),
-                page == current)),
+                page == current,
+                string.IsNullOrWhiteSpace(page.Document.Group)
+                    ? null
+                    : page.Document.Group)),
         ];
+
+        bool grouped = Array.Exists(docs, entry => entry.Group is not null);
         ReDocPickerEntry[] linkEntries =
         [
             .. links.Select(link => new ReDocPickerEntry(
@@ -167,9 +172,38 @@ internal static class ReDocDocumentPicker
         // The default encoder escapes <, >, & and quotes, so the JSON is safe inside <script>.
         return template
             .Replace("{{TOOLBAR_SCRIPT}}", ReDocToolbar.ScriptFunction)
+            .Replace("{{GROUP_FUNCTION}}", grouped ? GroupFunction : string.Empty)
+            .Replace("{{DOC_PARENT}}", grouped ? "groupFor(select, doc)" : "select")
             .Replace("{{DOCS}}", Serialize(docs))
             .Replace("{{LINKS}}", Serialize(linkEntries));
     }
+
+    /// <summary>
+    /// Finds or creates the <c>&lt;optgroup&gt;</c> an entry belongs in, emitted only when some
+    /// document is actually grouped.
+    /// </summary>
+    /// <remarks>
+    /// Conditional so that a site using no groups serves the script it served before groups
+    /// existed, byte for byte — which is the standard a change in core has to meet, since the two
+    /// adapters emit this same script inline. Both placeholders it pairs with resolve to the old
+    /// text when there is nothing to group, including the blank line this one would occupy.
+    /// </remarks>
+    private const string GroupFunction = """
+              function groupFor(select, doc) {
+                if (!doc.group) { return select; }
+                var groups = select.hlibzGroups || (select.hlibzGroups = {});
+                if (!groups[doc.group]) {
+                  var group = document.createElement('optgroup');
+                  group.label = doc.group;
+                  groups[doc.group] = group;
+                  // Where its first member falls, so configured order is what you see.
+                  select.appendChild(group);
+                }
+                return groups[doc.group];
+              }
+
+
+            """;
 
     private static string Serialize(ReDocPickerEntry[] entries) =>
         JsonSerializer.Serialize(entries, ReDocPickerJson.Default.ReDocPickerEntryArray);

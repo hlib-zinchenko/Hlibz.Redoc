@@ -11,32 +11,35 @@ builder.Services.AddSampleDocuments();
 
 WebApplication app = builder.Build();
 
-// The policy these pages are actually served under, so the sample proves it rather than the
-// README claiming it. 'unsafe-inline' is in style-src because ReDoc renders through
-// styled-components and injects its rules at runtime; everything else is 'self' because this
-// package puts no script, style or config in the markup.
-app.Use(async (context, next) =>
-{
-    context.Response.Headers["Content-Security-Policy"] =
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-        + "img-src 'self' data: https://cdn.redoc.ly; font-src 'self' data:; "
-        + "worker-src 'self' blob:; child-src 'self' blob:; connect-src 'self'; "
-        + "object-src 'none'; base-uri 'none'";
-    await next(context);
-});
-
 app.MapOpenApi();
 app.MapReDocDocuments(
     [
+        // Grouped so the picker shows an <optgroup>: the catalogue on its own, the two
+        // supply-side documents together.
         new ReDocDocument("widgets", "Widget Catalog"),
-        new ReDocDocument("manufacturers", "Manufacturers"),
-        new ReDocDocument("facilities", "Facilities"),
+        new ReDocDocument("manufacturers", "Manufacturers", Group: "Supply chain"),
+        new ReDocDocument("facilities", "Facilities", Group: "Supply chain"),
     ],
     docs =>
     {
         docs.RoutePrefix = "api-docs";
         docs.Links.Add(new ReDocLink("Widgets OpenAPI JSON", "~/openapi/widgets.json"));
         docs.DefaultColorMode = ReDocColorMode.System;
+
+        // The pages are served under a real policy, so the sample proves it rather than the
+        // README claiming it. 'unsafe-inline' is in style-src because ReDoc renders through
+        // styled-components and injects its rules at runtime; everything else is 'self' because
+        // this package puts no script, style or config in the markup.
+        docs.UseDefaultContentSecurityPolicy();
+
+        // A brand accent, one hue per color mode, to show both properties doing something.
+        docs.PrimaryColor = "#c026d3";
+        docs.DarkModePrimaryColor = "#e879f9";
+
+        // A toolbar button beside the picker, and the prefix sending you back to whichever
+        // document you were last reading.
+        docs.AddToolbarItem("Sample source", "https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions", newTab: true);
+        docs.RememberLastDocument = true;
     });
 
 app.MapGet("/", () => TypedResults.Redirect("/api-docs")).ExcludeFromDescription();

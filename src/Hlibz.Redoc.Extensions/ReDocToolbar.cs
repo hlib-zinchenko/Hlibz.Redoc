@@ -31,6 +31,32 @@ internal static class ReDocToolbar
 
         """;
 
+    /// <summary>
+    /// Styling for the plain links a host can add to the toolbar, without
+    /// <see cref="Css"/>. Shaped like the picker's pill so a row of controls reads as one set.
+    /// </summary>
+    /// <remarks>
+    /// Only <c>Hlibz.Redoc.AspNetCore</c> emits these: it serves its scripts as files, so a link
+    /// costs it nothing, while on the adapters the toolbar reaches the page through the picker's
+    /// inlined script and would have nowhere to go when a single-document site has no picker.
+    /// The CSS lives here anyway, with the container it belongs to and the tokens it reads.
+    /// </remarks>
+    public const string ItemCss = """
+          .hlibz-toolbar-item {
+            display: inline-flex; align-items: center; height: 36px; padding: 0 14px;
+            box-sizing: border-box; border-radius: 999px;
+            background: var(--hlibz-control-bg);
+            border: 1px solid var(--hlibz-control-border);
+            box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+            color: var(--hlibz-control-fg); text-decoration: none; white-space: nowrap;
+            font: 500 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          }
+          .hlibz-toolbar-item:hover { color: var(--hlibz-control-fg-hover); }
+          .hlibz-toolbar-item:focus-visible {
+            outline: 2px solid var(--hlibz-control-accent); outline-offset: 1px;
+          }
+        """;
+
     /// <summary>A JS function declaration returning the toolbar element, creating it on first use.</summary>
     public const string ScriptFunction = """
           function hlibzToolbar() {
