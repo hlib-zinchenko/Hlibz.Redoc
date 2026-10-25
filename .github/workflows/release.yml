@@ -40,17 +40,23 @@ jobs:
       - name: Test Swashbuckle adapter
         run: dotnet test --project tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests --no-build --configuration Release
 
+      - name: Test our host
+        run: dotnet test --project tests/Hlibz.Redoc.AspNetCore.Tests --no-build --configuration Release
+
       - name: Determine package version from tag
         id: version
         run: echo "value=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      # Core and every adapter ship one version, driven by the tag.
+      # Core, both adapters and our own host ship one version, driven by the tag.
+      # Every ID here needs its own nuget.org trusted-publishing policy before the first tag
+      # that would publish it, or the push fails.
       - name: Pack
         run: |
           for project in \
             src/Hlibz.Redoc.Extensions \
             src/Hlibz.Redoc.Extensions.RedocAspNetCore \
-            src/Hlibz.Redoc.Extensions.Swashbuckle
+            src/Hlibz.Redoc.Extensions.Swashbuckle \
+            src/Hlibz.Redoc.AspNetCore
           do
             dotnet pack "$project" \
               --configuration Release \
