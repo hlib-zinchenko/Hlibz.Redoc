@@ -167,6 +167,101 @@ public class ReDocDocumentsOptionsTests
         Assert.Contains("--link-color-primary: var(--brand-accent);", css, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(ReDocThemePreset.Midnight, "#09090b", "#7dd3fc")]
+    [InlineData(ReDocThemePreset.Nord, "#2e3440", "#88c0d0")]
+    [InlineData(ReDocThemePreset.GitHubDark, "#0d1117", "#2f81f7")]
+    public void ThemePreset_RepointsTheDarkRampAndTheAccent(
+        ReDocThemePreset preset, string background, string accent)
+    {
+        ReDocDocumentsOptions options = new() { ThemePreset = preset };
+
+        string css = ReDocPage.Css(options, withPicker: false);
+
+        // Index 2 of the ramp is the page background in dark mode, and every other surface,
+        // border and piece of text is derived from the same eleven values — which is why a
+        // preset is eleven greys rather than a list of tokens.
+        Assert.Contains($"--color-warm-grey-2: {background};", css, StringComparison.Ordinal);
+        Assert.Contains($"--color-primary-base: {accent};", css, StringComparison.Ordinal);
+        Assert.Contains("--color-warm-grey-11: ", css, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ThemePreset_AppliesToDarkModeOnly()
+    {
+        string css = ReDocPage.Css(
+            new ReDocDocumentsOptions { ThemePreset = ReDocThemePreset.Nord },
+            withPicker: false);
+        string beforePrint = css[..css.IndexOf("@media print", StringComparison.Ordinal)];
+
+        // All three presets are dark palettes; a light counterpart invented here would be neither
+        // the preset's nor ReDoc's.
+        Assert.Contains(":root:root.dark {", beforePrint, StringComparison.Ordinal);
+        Assert.DoesNotContain("\n:root:root {", beforePrint, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ThemePreset_None_WritesNothing()
+    {
+        string css = ReDocPage.Css(new ReDocDocumentsOptions(), withPicker: false);
+
+        // Only the print block re-points the ramp without a preset, and it puts ReDoc's own light
+        // values back rather than painting anything.
+        Assert.DoesNotContain(
+            "--color-warm-grey-2: ",
+            css[..css.IndexOf("@media print", StringComparison.Ordinal)],
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ThemePreset_KeepsItsRampButNotItsAccentWhenOneIsConfigured()
+    {
+        ReDocDocumentsOptions options = new()
+        {
+            ThemePreset = ReDocThemePreset.Nord,
+            PrimaryColor = "#c026d3",
+        };
+
+        string css = ReDocPage.Css(options, withPicker: false);
+
+        // The preset's accent sits under :root:root.dark, which outweighs the plain :root:root a
+        // PrimaryColor meant for both modes is written as — so the preset gives it up rather than
+        // quietly winning in dark mode.
+        Assert.Contains("--color-warm-grey-2: #2e3440;", css, StringComparison.Ordinal);
+        Assert.DoesNotContain("#88c0d0", css, StringComparison.Ordinal);
+        Assert.Contains("--color-primary-base: #c026d3;", css, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ThemePreset_PrintsTheShadeOfItselfThatReadsOnPaper()
+    {
+        string css = ReDocPage.Css(
+            new ReDocDocumentsOptions { ThemePreset = ReDocThemePreset.GitHubDark },
+            withPicker: false);
+        string print = css[css.IndexOf("@media print", StringComparison.Ordinal)..];
+
+        // The ramp goes back to ReDoc's light one, so the accent has to come back with it: GitHub's
+        // dark accent.fg on white paper is the same problem the ramp restore exists to fix.
+        Assert.Contains("--link-color-primary: #0969da;", print, StringComparison.Ordinal);
+        Assert.DoesNotContain("#2f81f7", print, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AdditionalCss_ComesAfterTheThemePreset_SoItWins()
+    {
+        ReDocDocumentsOptions options = new()
+        {
+            ThemePreset = ReDocThemePreset.Midnight,
+            AdditionalCss = ":root:root.dark { --color-warm-grey-2: rebeccapurple; }",
+        };
+
+        string css = ReDocPage.Css(options, withPicker: false);
+
+        Assert.True(
+            css.IndexOf("#09090b", StringComparison.Ordinal)
+            < css.IndexOf("rebeccapurple", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void PrintStyles_RestoreTheLightRampForTheDarkMode()
     {

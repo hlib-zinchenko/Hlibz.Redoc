@@ -120,9 +120,12 @@ takes one project at a time.
     silently protects nothing is the failure worth ruling out.
   - `assets/redoc.standalone.js.gz` is the ReDoc bundle, **checked in gzipped and served that way**.
     No Node, no `npm`, no build-time download: `assets/README.md` records the version, the npm
-    tarball integrity and the upgrade steps, and `ReDocBundle.Version` must match it (a test
-    asserts the bundle itself carries the string). `gzip -n` on upgrade, or the file differs on
-    every run.
+    tarball integrity and the upgrade steps. `gzip -n` on upgrade, or the file differs on every
+    run. That note is **embedded into the test assembly**, and every row of its table is asserted
+    against the shipped bundle — version, tarball name, the uncompressed sha256, and all three byte
+    counts — so an upgrade that doesn't update the note fails a test rather than making the note a
+    lie. The one row a test can't reach is the npm tarball's own integrity hash, for a file the
+    repository doesn't contain.
   - `ReDocPage` (internal) builds the markup, the stylesheet, `redoc-init.js` and
     `redoc-colormode.js`. **Nothing is inline** — not the config, not the picker, not the
     color-mode bootstrap — which is the entire reason to own the template: `script-src 'self'`
@@ -149,6 +152,43 @@ takes one project at a time.
     or AOT host has reflection-based serialization off. `AdditionalConfigJson` is the escape hatch
     for ReDoc options this package doesn't surface, validated where it's set rather than on the
     page.
+  - `ReDocThemePresets` (internal) backs `ThemePreset` — Midnight / Nord / GitHubDark, each eleven
+    `--color-warm-grey-N` values plus an accent, under `:root:root.dark`. That is a whole theme
+    because of the ramp fact above, and it is **dark mode only**: all three are dark palettes.
+    Setting `PrimaryColor` or `DarkModePrimaryColor` turns the preset's accent off rather than
+    letting it lose — the preset's selector is one class heavier than the `:root:root` a
+    `PrimaryColor` meant for both modes is written as, so ordering couldn't settle it. Each preset
+    also carries the shade of its accent that reads on paper, which `AppendPrintCss` emits beside
+    the restored light ramp. Adding a preset is a row in `PaletteOf` and an enum member.
+  - `PickerPlacement` and `ToolbarItemsPlacement` (`ReDocToolbarPlacement`: `TopRight`,
+    `BottomRight`, `Sidebar`) place the picker and the links **independently**. The mechanism is
+    one container per spot, found by that spot's own class: matching placements resolve to the
+    same element at runtime and share a row, different ones each build their own. So placement
+    hangs off `ReDocToolbar.ScriptFunctionFor`, i.e. off **creating the container** — each of the
+    two scripts carries the variant for its own spot, whichever runs first creates, and the other
+    appends to what it finds. `ReDocToolbarSpot` is core's internal spelling of the public enum,
+    which lives in the host because only the host can place anything; its `Shared` member is the
+    adapters' unplaced container and the reason their inlined script is still byte-identical.
+  - Order inside a strip is CSS, never DOM order, because the two scripts append in load order and
+    only one of them may exist. The picker carries `order: -1` in core (it leads the theme selector
+    on the adapters, which must not move), so the host outweighs it by one class: a corner strip
+    gets `.hlibz-toolbar .hlibz-doc-picker { order: 1 }` — links first, since the picker is the
+    element that grows with a document's name and a row that ends with it doesn't shuffle — and
+    `SidebarCss`, emitted last, puts `order: -1` back for a column. Both are emitted only when they
+    can matter, so the stylesheet says what the page does.
+  - For `Sidebar` the hook is `.menu-content`, **the one class ReDoc doesn't hash**; measured on
+    3.0.1, a node inserted as its first child survives menu navigation, a colour-mode switch, the
+    search dialog and scrolling. Two things the browser showed and nothing else would: ReDoc
+    renders the sidebar after its bundle boots, so the strip starts over the page and moves once
+    a `MutationObserver` sees the sidebar; and below ReDoc's own 50rem breakpoint the sidebar is
+    `display: none` until its floating button opens it, so a `matchMedia` listener brings the
+    strip back out there. Dropping either fallback leaves a phone, or a failed render, with no
+    picker at all.
+  - Under that same breakpoint core's base rule drops **every** strip into the page flow, which is
+    also what keeps `BottomRight` off the floating menu button a phone puts in that corner. DOM
+    order is then reading order, so the bottom-right strip inserts itself after every strip already
+    at body level while the others insert first — the one case where creation order would otherwise
+    decide what you see.
 - `src/Hlibz.Redoc.Extensions/` — core: everything that doesn't touch a host's `ReDocOptions`.
   It keeps `FrameworkReference Microsoft.AspNetCore.App` but references no host package — ASP.NET
   is common ground to every host, so document validation, route computation and the prefix redirect
@@ -173,7 +213,11 @@ takes one project at a time.
   - `ReDocDocumentPicker` exposes its `Css` and `BuildScript` separately from `Build`, because the
     adapters can only inline them through `HeadContent` while our host serves them as files. The
     adapters' output is byte-identical either way — it was diffed against the previous commit's
-    served pages on both hosts, which is the standard any change in here should meet.
+    served pages on both hosts, which is the standard any change in here should meet. The
+    host-only additions — `<optgroup>` groups, and `BuildScript`'s `spot`, which only chooses among
+    `ReDocToolbar.ScriptFunctionFor`'s variants — resolve to the previous text at their defaults
+    (`ReDocToolbarSpot.Shared`, no groups), including the blank lines they'd occupy, precisely so
+    that diff stays empty.
   - `ReDocDocument.Unlisted` keeps a document out of the picker on *listed* pages; unlisted pages
     list everything. The rule is about the page doing the asking, never its viewer, because each
     page is built once at startup and served to everyone as the same string —
@@ -249,7 +293,10 @@ takes one project at a time.
     It also declares the `--hlibz-control-*` color tokens (bg, border, fg, fg-hover, accent,
     accent-fg) with light values under `:where(html)` (zero specificity).
     `ReDocDarkThemeDefaults.BuildHeadContent` overrides them under the dark root selector, so both
-    controls follow the active theme without knowing which features are on.
+    controls follow the active theme without knowing which features are on. It also owns where a
+    container *goes*: `ScriptFunctionFor(spot)` returns one creator per `ReDocToolbarSpot`, each
+    identifying its container by that spot's class — which is what lets one page carry several
+    strips and each script find only its own.
 - `samples/Sample.Shared/` — the three OpenAPI documents and the endpoints behind them,
   `AddSampleDocuments()` / `MapSampleEndpoints()`, so every sample renders the *same* spec and the
   samples can be run together and compared. Each document is registered with `AddOpenApi(name)` and

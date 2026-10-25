@@ -144,8 +144,14 @@ internal sealed class ReDocDocumentsPlan
     /// The picker's script for one page, without the <c>&lt;script&gt;</c> tags: for a host that
     /// serves it as a file instead of inlining it into the page.
     /// </summary>
-    public string PickerScriptFor(ReDocDocumentPage page) =>
-        ReDocDocumentPicker.BuildScript(PickerPagesFrom(page), links, page);
+    /// <param name="page">The page the script is served from.</param>
+    /// <param name="spot">
+    /// Which control strip the picker goes into. Only a host that owns its page has the choice;
+    /// the adapters take <see cref="ReDocToolbarSpot.Shared"/>.
+    /// </param>
+    public string PickerScriptFor(
+        ReDocDocumentPage page, ReDocToolbarSpot spot = ReDocToolbarSpot.Shared) =>
+        ReDocDocumentPicker.BuildScript(PickerPagesFrom(page), links, page, spot);
 
     private static string RouteOf(ReDocDocument doc, string prefix)
     {

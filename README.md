@@ -118,15 +118,17 @@ uses `PrimaryColor`: the dark one was chosen to carry on a near-black page, not 
 
 ## Toolbar links
 
-The top-right toolbar — the thing the document picker sits in — takes links of your own:
+The toolbar — a strip at the top right unless
+[`ToolbarItemsPlacement`](#where-the-controls-sit) says otherwise — takes links of your own:
 
 ```csharp
 docs.AddToolbarItem("Postman collection", "~/postman/widgets.json", newTab: true)
     .AddToolbarItem("Changelog", "/changelog");
 ```
 
-They render as buttons after the picker, in the order you add them, and they take their colors from
-the same tokens the picker does, so they follow the color mode and your accent without being told.
+They render as buttons in the order you add them — before the picker when they share its corner,
+after it when they share the sidebar — and they take their colors from the same tokens the picker
+does, so they follow the color mode and your accent without being told.
 A `~/` URL resolves against the app's base path like everything else here, so it survives a
 `PathBase` or a path-rewriting proxy; an absolute URL or a root-relative path is used as-is.
 
@@ -145,6 +147,53 @@ Toolbar links are `Hlibz.Redoc.AspNetCore` only. On the adapters the toolbar rea
 through the picker's inlined script, so a single-document site — which has no picker — would have
 nowhere to put them.
 
+## Where the controls sit
+
+The document picker and the toolbar links are placed independently, and both default to the top
+right:
+
+```csharp
+docs.PickerPlacement = ReDocToolbarPlacement.Sidebar;
+docs.ToolbarItemsPlacement = ReDocToolbarPlacement.BottomRight;
+```
+
+| | |
+|---|---|
+| `TopRight` | Floating over ReDoc's content, in the corner. The default. |
+| `BottomRight` | The other corner — clear of the page title and of ReDoc's own buttons above the content. |
+| `Sidebar` | A row across the top of ReDoc's sidebar, above its search box. |
+
+**Give both controls the same placement and they share one strip; give them different ones and each
+gets a strip of its own.** In a corner they read *links first, then picker*: the links are
+fixed-width and the picker grows with a document's name, so a row that ends with the widest element
+doesn't shuffle as you switch documents. In the sidebar, which is a column, the picker leads —
+you navigate with it, and a column reads top-down.
+
+```
+TopRight / BottomRight ─ [ Changelog ] [ Postman ] [ ◆ Widget Catalog ▾ ]
+Sidebar ───────────────  [ ◆ Widget Catalog ▾ ]
+                         [ Changelog ] [ Postman ]
+```
+
+`Sidebar` is the one to reach for once there are more documents than a pill in the corner can show,
+or once their names are long enough to be cut off at 280px — there the picker takes the sidebar's
+full width instead.
+
+The sidebar is ReDoc's own React tree, so that placement hangs off `.menu-content` — the one class
+ReDoc doesn't hash. Measured against 3.0.1: an element inserted as its first child survives
+navigating the menu, switching color mode, opening and closing search, and scrolling. Two things
+follow from the sidebar not being ours. ReDoc renders it after its bundle boots, so the strip starts
+over the page and moves once the sidebar exists — a page where ReDoc never renders keeps a working
+picker. And below ReDoc's own breakpoint the sidebar is hidden behind a floating button, so on a
+phone that strip comes back out over the page rather than disappearing with it.
+
+On a narrow screen every strip leaves its corner and stacks in the page flow above the content,
+whatever its placement, so none of them covers the title — and so `BottomRight` stays off the
+floating menu button a phone puts in exactly that corner. A bottom-right strip reads last wherever
+it ends up.
+
+Placement is `Hlibz.Redoc.AspNetCore` only.
+
 ## Remembering the last document
 
 `docs.RememberLastDocument = true` makes `/{RoutePrefix}` send a returning viewer back to the
@@ -159,6 +208,35 @@ The cookie is a name to look up, never a path to follow, so a stale or hand-edit
 the first document rather than going anywhere of its own choosing. `Unlisted` documents aren't
 remembered: an unlisted document is usually the gated one, and sending a viewer whose access has
 lapsed to a page that answers 401 is worse than sending them to the public one.
+
+## Named dark palettes
+
+Three palettes ship as presets, for when you want a different dark mode rather than a different
+accent:
+
+```csharp
+docs.ThemePreset = ReDocThemePreset.Nord;   // or Midnight, or GitHubDark
+```
+
+| | |
+|---|---|
+| `Midnight` | Near-black with a sky accent — this repo's ReDoc 2 dark theme as a ReDoc 3 palette, so a site moving off one of the adapters can keep looking like itself. |
+| `Nord` | Polar Night surfaces, Snow Storm text, a Frost accent. |
+| `GitHubDark` | GitHub's canvas and border greys with its blue accent. |
+
+Each one is eleven greys and an accent, and that is a whole theme rather than a tint: **ReDoc 3's
+dark mode is its grey ramp reversed**, and the page background, the panels, both border weights,
+primary and secondary text and the code blocks all resolve to `var(--color-warm-grey-N)`. Point
+those eleven values somewhere else and everything follows. (This is also why presets are a ReDoc 3
+feature and the adapters don't have one: on ReDoc 2 a theme could only reach the keys the theme
+object exposed.)
+
+A preset paints **dark mode only**. All three are dark palettes, and a light counterpart invented
+here would be neither the preset's nor ReDoc's — so set `DefaultColorMode = ReDocColorMode.Dark` if
+a first-time viewer on a light OS should see it too. Setting `PrimaryColor` or
+`DarkModePrimaryColor` takes the accent over from the preset, and `AdditionalCss` comes after the
+preset and can reach the rest. Printing puts ReDoc's light ramp back, and brings the preset's own
+paper-legible shade of its accent with it.
 
 ## Brand color, and anything else CSS can reach
 
@@ -342,7 +420,10 @@ Two things worth knowing:
 | `Favicon` | `href` for the page's `<link rel="icon">`. Unset, browsers ask for `/favicon.ico`. |
 | `PrimaryColor` | The accent, as any CSS color. Writes `--color-primary-base` and `--link-color-primary` under `:root`. |
 | `DarkModePrimaryColor` | The accent while `html.dark` is in effect, when it should differ. Defaults to `PrimaryColor`. |
-| `AdditionalCss` | Appended to the page's stylesheet, after the accent. |
+| `ThemePreset` | A named dark palette: `None` (default), `Midnight`, `Nord` or `GitHubDark`. Dark mode only; either accent property above takes its accent over. |
+| `PickerPlacement` | Where the document picker sits: `TopRight` (default), `BottomRight` or `Sidebar`. |
+| `ToolbarItemsPlacement` | The same, for the toolbar links, and set independently. Matching the picker's puts both in one strip. |
+| `AdditionalCss` | Appended to the page's stylesheet, after the accent and the preset. |
 | `ContentSecurityPolicy` | Sent with each page. Unset, none is sent; `UseDefaultContentSecurityPolicy()` sets the verified one. A policy your own middleware already set is left alone. |
 | `PrintStyles` | Print the page light, without the toolbar. Defaults to `true`. |
 | `AddToolbarItem(label, url, newTab)` | Adds a link button to the toolbar, beside the picker. `ToolbarItems` is the list behind it. |

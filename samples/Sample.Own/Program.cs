@@ -36,6 +36,19 @@ app.MapReDocDocuments(
         docs.PrimaryColor = "#c026d3";
         docs.DarkModePrimaryColor = "#e879f9";
 
+        // A named palette for dark mode, on top of which those two accents still win — which is
+        // the rule worth seeing rather than reading: the preset paints the greys, the brand paints
+        // the accent. Switch to Nord or GitHubDark to see the other two.
+        docs.ThemePreset = ReDocThemePreset.Midnight;
+
+        // The two controls are placed separately, and the sample splits them to show it: the
+        // picker goes where navigation already is, and the link button to the other corner, clear
+        // of both the page title and ReDoc's own buttons above the content. Set them to the same
+        // placement and they share one strip instead. On a phone, where ReDoc hides its sidebar
+        // and owns the bottom-right corner, both come back out over the page on their own.
+        docs.PickerPlacement = ReDocToolbarPlacement.Sidebar;
+        docs.ToolbarItemsPlacement = ReDocToolbarPlacement.BottomRight;
+
         // A toolbar button beside the picker, and the prefix sending you back to whichever
         // document you were last reading.
         docs.AddToolbarItem("Sample source", "https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions", newTab: true);

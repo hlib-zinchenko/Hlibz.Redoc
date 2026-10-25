@@ -101,6 +101,11 @@ internal sealed class ReDocSite
 
         bool withToolbarItems = options.ToolbarItems.Count > 0;
 
+        // The two controls are placed independently, so each script is built for its own strip.
+        // Where the placements match, both resolve to the same container at runtime by class.
+        ReDocToolbarSpot pickerSpot = ReDocPage.SpotOf(options.PickerPlacement);
+        ReDocToolbarSpot itemsSpot = ReDocPage.SpotOf(options.ToolbarItemsPlacement);
+
         List<ReDocSitePage> pages = [];
         foreach (ReDocDocumentPage page in plan.Pages)
         {
@@ -121,11 +126,11 @@ internal sealed class ReDocSite
                     plan.SpecUrlOf(page.Document),
                     configJson),
                 colorModeScript,
-                withPicker ? plan.PickerScriptFor(page) : null,
+                withPicker ? plan.PickerScriptFor(page, pickerSpot) : null,
                 // Per page rather than once for the site: a `~/` item resolves against the page's
                 // own route depth, the same way the picker's links do.
                 withToolbarItems
-                    ? ReDocPage.ToolbarScript(options.ToolbarItems, page.Route)
+                    ? ReDocPage.ToolbarScript(options.ToolbarItems, page.Route, itemsSpot)
                     : null,
                 page.Document.Unlisted));
         }

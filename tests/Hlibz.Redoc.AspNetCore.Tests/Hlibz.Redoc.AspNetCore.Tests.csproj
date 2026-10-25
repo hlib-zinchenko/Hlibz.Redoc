@@ -27,4 +27,12 @@
     <ProjectReference Include="..\..\src\Hlibz.Redoc.AspNetCore\Hlibz.Redoc.AspNetCore.csproj" />
   </ItemGroup>
 
+  <!-- The bundle's provenance note, so a test can hold the table in it against the bundle it
+       describes. Embedded rather than read off disk: the test then needs no path to the repository
+       and runs the same wherever the assembly is. It is not embedded in the package itself. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\src\Hlibz.Redoc.AspNetCore\assets\README.md"
+                      LogicalName="assets-README.md" />
+  </ItemGroup>
+
 </Project>

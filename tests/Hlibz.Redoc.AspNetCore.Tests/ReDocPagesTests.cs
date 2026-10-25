@@ -177,6 +177,149 @@ public class ReDocPagesTests
     }
 
     [Fact]
+    public async Task ByDefault_BothControlsShareTheTopRightStrip()
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            configure: docs => docs.AddToolbarItem("Changelog", "/changelog"));
+
+        string picker = await GetAsync(app, "/api-docs/taxes/redoc-picker.js");
+        string toolbar = await GetAsync(app, "/api-docs/taxes/redoc-toolbar.js");
+        string css = await GetAsync(app, "/api-docs/taxes/redoc-page.css");
+
+        // One container, found by its class, so whichever script runs first creates it and the
+        // other appends to it.
+        foreach (string script in new[] { picker, toolbar })
+        {
+            Assert.Contains(
+                "document.querySelector('.hlibz-toolbar-top-right')",
+                script,
+                StringComparison.Ordinal);
+            Assert.DoesNotContain("menu-content", script, StringComparison.Ordinal);
+        }
+
+        // A horizontal strip reads links-then-picker, and nothing else needs positioning.
+        Assert.Contains(
+            ".hlibz-toolbar .hlibz-doc-picker { order: 1; }", css, StringComparison.Ordinal);
+        Assert.DoesNotContain("hlibz-toolbar-bottom-right", css, StringComparison.Ordinal);
+        Assert.DoesNotContain("hlibz-toolbar-in-menu", css, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PlacementsAreIndependent_SoTheTwoControlsCanSplitUp()
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            configure: docs =>
+            {
+                docs.PickerPlacement = ReDocToolbarPlacement.Sidebar;
+                docs.ToolbarItemsPlacement = ReDocToolbarPlacement.BottomRight;
+                docs.AddToolbarItem("Changelog", "/changelog");
+            });
+
+        string picker = await GetAsync(app, "/api-docs/taxes/redoc-picker.js");
+        string toolbar = await GetAsync(app, "/api-docs/taxes/redoc-toolbar.js");
+        string css = await GetAsync(app, "/api-docs/taxes/redoc-page.css");
+
+        // Each script builds its own strip, so neither can find the other's.
+        Assert.Contains(
+            "document.querySelector('.hlibz-toolbar-sidebar')", picker, StringComparison.Ordinal);
+        Assert.Contains("hlibzPlaceInMenu(toolbar);", picker, StringComparison.Ordinal);
+        Assert.Contains(
+            "document.querySelector('.hlibz-toolbar-bottom-right')",
+            toolbar,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain("menu-content", toolbar, StringComparison.Ordinal);
+
+        Assert.Contains(".hlibz-toolbar-bottom-right {", css, StringComparison.Ordinal);
+        Assert.Contains(".hlibz-toolbar-in-menu {", css, StringComparison.Ordinal);
+
+        // Nothing shares a row, so there is no order to state.
+        Assert.DoesNotContain("order: 1;", css, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SharedSidebarStrip_PutsThePickerFirstInstead()
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            configure: docs =>
+            {
+                docs.PickerPlacement = ReDocToolbarPlacement.Sidebar;
+                docs.ToolbarItemsPlacement = ReDocToolbarPlacement.Sidebar;
+                docs.AddToolbarItem("Changelog", "/changelog");
+            });
+
+        string css = await GetAsync(app, "/api-docs/taxes/redoc-page.css");
+
+        // A column reads top-down, so the thing you navigate with leads — the opposite of a row,
+        // and the sidebar rule comes last so it outweighs the row rule rather than fighting it.
+        Assert.Contains(
+            ".hlibz-toolbar-in-menu .hlibz-doc-picker { order: -1;",
+            css,
+            StringComparison.Ordinal);
+        Assert.True(
+            css.IndexOf(".hlibz-toolbar .hlibz-doc-picker { order: 1; }", StringComparison.Ordinal)
+            < css.IndexOf(".hlibz-toolbar-in-menu .hlibz-doc-picker", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task BottomRightStrip_SitsUnderTheTopRightOneInTheDom()
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            configure: docs =>
+            {
+                docs.ToolbarItemsPlacement = ReDocToolbarPlacement.BottomRight;
+                docs.AddToolbarItem("Changelog", "/changelog");
+            });
+
+        string toolbar = await GetAsync(app, "/api-docs/taxes/redoc-toolbar.js");
+
+        // Invisible while each is pinned to its own corner, and the whole point on a phone, where
+        // the breakpoint drops them all into the page flow and DOM order is reading order.
+        Assert.Contains(
+            "document.body.querySelectorAll(':scope > .hlibz-toolbar')",
+            toolbar,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "above[above.length - 1].nextSibling", toolbar, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SidebarPlacement_WithLinksAndNoPicker_StillReachesTheSidebar()
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            [new ReDocDocument("taxes")],
+            docs =>
+            {
+                docs.ToolbarItemsPlacement = ReDocToolbarPlacement.Sidebar;
+                docs.AddToolbarItem("Changelog", "/changelog");
+            });
+
+        string toolbar = await GetAsync(app, "/api-docs/taxes/redoc-toolbar.js");
+        string css = await GetAsync(app, "/api-docs/taxes/redoc-page.css");
+
+        // A single-document site has no picker, so the links' own script is the only one that can
+        // place the strip.
+        Assert.Contains("hlibzPlaceInMenu(toolbar);", toolbar, StringComparison.Ordinal);
+        Assert.Contains(".hlibz-toolbar-in-menu", css, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SidebarPlacement_StillHasSomewhereToGoWhenTheSidebarIsnt()
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            configure: docs => docs.PickerPlacement = ReDocToolbarPlacement.Sidebar);
+
+        string picker = await GetAsync(app, "/api-docs/taxes/redoc-picker.js");
+
+        // Two cases, both measured in a browser against 3.0.1: ReDoc renders its sidebar after the
+        // bundle boots, and below its own breakpoint the sidebar is display:none until the floating
+        // button opens it. Either way the controls belong over the page rather than nowhere.
+        Assert.Contains("var parent = menu || document.body;", picker, StringComparison.Ordinal);
+        Assert.Contains("new MutationObserver", picker, StringComparison.Ordinal);
+        Assert.Contains(
+            "window.matchMedia('(max-width: 50rem)')", picker, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SingleDocument_GetsNoPicker()
     {
         await using ReDocTestApp app = await ReDocTestApp.StartAsync(

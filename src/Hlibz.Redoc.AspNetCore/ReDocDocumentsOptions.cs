@@ -99,10 +99,54 @@ public sealed class ReDocDocumentsOptions : ReDocDocumentsOptionsBase
     }
 
     /// <summary>
+    /// A named palette for ReDoc's dark mode. Defaults to <see cref="ReDocThemePreset.None"/>,
+    /// which leaves ReDoc's own.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A preset re-points ReDoc 3's grey ramp, which every surface, border and piece of text is
+    /// derived from, so it is a whole dark theme rather than a tint. It applies to dark mode only:
+    /// all of them are dark palettes, and a light counterpart invented here would be nobody's
+    /// theme. Set <see cref="DefaultColorMode"/> to <see cref="ReDocColorMode.Dark"/> if a
+    /// first-time viewer on a light OS should see it too.
+    /// </para>
+    /// <para>
+    /// <see cref="PrimaryColor"/> or <see cref="DarkModePrimaryColor"/> replaces the preset's
+    /// accent — setting either turns the preset's own off, so a brand color wins whichever mode it
+    /// was set for — and <see cref="AdditionalCss"/> comes after the preset and can reach the rest.
+    /// </para>
+    /// </remarks>
+    public ReDocThemePreset ThemePreset { get; set; } = ReDocThemePreset.None;
+
+    /// <summary>
+    /// Where the document picker sits. Defaults to <see cref="ReDocToolbarPlacement.TopRight"/>.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="ReDocToolbarPlacement.Sidebar"/> is the one to reach for once there are more
+    /// documents than a pill at the top right can show, or once their names are long enough to be
+    /// cut off in it.
+    /// </remarks>
+    public ReDocToolbarPlacement PickerPlacement { get; set; } = ReDocToolbarPlacement.TopRight;
+
+    /// <summary>
+    /// Where the <see cref="ToolbarItems"/> links sit. Defaults to
+    /// <see cref="ReDocToolbarPlacement.TopRight"/>, and it is independent of
+    /// <see cref="PickerPlacement"/>.
+    /// </summary>
+    /// <remarks>
+    /// Matching <see cref="PickerPlacement"/> puts both in one strip, with the links first; giving
+    /// them different placements gives each a strip of its own — the picker in the sidebar with
+    /// the navigation and the links left in a corner, say.
+    /// </remarks>
+    public ReDocToolbarPlacement ToolbarItemsPlacement { get; set; } =
+        ReDocToolbarPlacement.TopRight;
+
+    /// <summary>
     /// CSS appended to the page's stylesheet, after this package's own rules — including the
-    /// accent set by <see cref="PrimaryColor"/>, so rules here win at equal specificity. ReDoc 3
-    /// is themed through CSS custom properties, so overriding e.g. <c>--color-primary-base</c>
-    /// under <c>html.dark</c> or <c>:root</c> is how anything else is themed.
+    /// accent set by <see cref="PrimaryColor"/> and anything <see cref="ThemePreset"/> paints, so
+    /// rules here win at equal specificity. ReDoc 3 is themed through CSS custom properties, so
+    /// overriding e.g. <c>--color-primary-base</c> under <c>html.dark</c> or <c>:root</c> is how
+    /// anything else is themed.
     /// </summary>
     public string? AdditionalCss { get; set; }
 
@@ -157,8 +201,8 @@ public sealed class ReDocDocumentsOptions : ReDocDocumentsOptionsBase
     public bool RememberLastDocument { get; set; }
 
     /// <summary>
-    /// Links shown as buttons in the toolbar at the top right, in this order, after the document
-    /// picker. Empty by default; <see cref="AddToolbarItem"/> is the convenient way to fill it.
+    /// Links shown as buttons in this order. Empty by default; <see cref="AddToolbarItem"/> is the
+    /// convenient way to fill it, and <see cref="ToolbarItemsPlacement"/> decides where they go.
     /// </summary>
     public IList<ReDocToolbarItem> ToolbarItems { get; } = [];
 

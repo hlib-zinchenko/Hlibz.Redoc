@@ -82,10 +82,21 @@ internal static class ReDocDocumentPicker
     /// The picker's script, without the <c>&lt;script&gt;</c> tags, so a host that owns its page
     /// can serve it as a file.
     /// </summary>
+    /// <param name="pages">The pages this picker lists.</param>
+    /// <param name="links">The plain links listed after them.</param>
+    /// <param name="current">The page this script is served from.</param>
+    /// <param name="spot">
+    /// Which strip this picker goes into. The picker appends to whatever container
+    /// <c>hlibzToolbar()</c> hands it whatever the spot, so only
+    /// <see cref="ReDocToolbar.ScriptFunctionFor"/> changes — which is what keeps
+    /// <see cref="ReDocToolbarSpot.Shared"/>, the adapters' value, emitting exactly what it always
+    /// has.
+    /// </param>
     public static string BuildScript(
         IReadOnlyList<ReDocDocumentPage> pages,
         IReadOnlyList<ReDocLink> links,
-        ReDocDocumentPage current)
+        ReDocDocumentPage current,
+        ReDocToolbarSpot spot = ReDocToolbarSpot.Shared)
     {
         const string template = """
             (function () {
@@ -171,7 +182,7 @@ internal static class ReDocDocumentPicker
 
         // The default encoder escapes <, >, & and quotes, so the JSON is safe inside <script>.
         return template
-            .Replace("{{TOOLBAR_SCRIPT}}", ReDocToolbar.ScriptFunction)
+            .Replace("{{TOOLBAR_SCRIPT}}", ReDocToolbar.ScriptFunctionFor(spot))
             .Replace("{{GROUP_FUNCTION}}", grouped ? GroupFunction : string.Empty)
             .Replace("{{DOC_PARENT}}", grouped ? "groupFor(select, doc)" : "select")
             .Replace("{{DOCS}}", Serialize(docs))

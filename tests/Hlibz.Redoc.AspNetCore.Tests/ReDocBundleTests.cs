@@ -1,4 +1,6 @@
 using System.IO.Compression;
+using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 
 using Xunit;
@@ -70,6 +72,68 @@ public class ReDocBundleTests
             Assert.EndsWith("\"", content.ETag, StringComparison.Ordinal);
         }
     }
+
+    /// <summary>
+    /// Everything <c>assets/README.md</c> records about the bundle, held against the bundle.
+    /// </summary>
+    /// <remarks>
+    /// That table is where an upgrade is written down — which version, which file out of which
+    /// tarball, and how big it came out — and until this test it was kept in step with the bundle
+    /// by hand, with only the version loosely covered. Each row is now checked against the bytes
+    /// in the assembly, so a bundle swapped in without updating the note fails here instead of
+    /// quietly making the note a lie. The one row this can't reach is the tarball's own integrity
+    /// hash, which belongs to a file that isn't in the repository.
+    /// </remarks>
+    [Fact]
+    public void AssetsReadme_DescribesTheBundleThatShipped()
+    {
+        IReadOnlyDictionary<string, string> recorded = AssetsReadmeTable();
+
+        Assert.Equal(ReDocBundle.Version, recorded["ReDoc"]);
+        Assert.Contains(
+            $"redoc-{ReDocBundle.Version}.tgz", recorded["npm tarball"], StringComparison.Ordinal);
+
+        Assert.Equal(
+            Convert.ToHexString(SHA256.HashData(ReDocBundle.Identity.Bytes.Span))
+                .ToLowerInvariant(),
+            recorded["that file, sha256"]);
+
+        Assert.Equal(ReDocBundle.Identity.Bytes.Length, ByteCount(recorded["uncompressed"]));
+        Assert.Equal(ReDocBundle.Gzip.Bytes.Length, ByteCount(recorded["as stored, gzip"]));
+        Assert.Equal(ReDocBundle.Brotli.Bytes.Length, ByteCount(recorded["as stored, brotli"]));
+    }
+
+    /// <summary>The <c>| label | value |</c> rows of the note, as a lookup.</summary>
+    private static IReadOnlyDictionary<string, string> AssetsReadmeTable()
+    {
+        using Stream stream = typeof(ReDocBundleTests).GetTypeInfo().Assembly
+            .GetManifestResourceStream("assets-README.md")
+            ?? throw new InvalidOperationException(
+                "assets/README.md is not embedded in the test assembly; see the EmbeddedResource "
+                + "in Hlibz.Redoc.AspNetCore.Tests.csproj.");
+
+        using StreamReader reader = new(stream);
+        Dictionary<string, string> rows = [];
+        while (reader.ReadLine() is { } line)
+        {
+            string[] cells = line.Split('|', StringSplitOptions.TrimEntries);
+            if (cells.Length != 4 || cells[1].Length == 0 || cells[1].StartsWith('-'))
+            {
+                continue;
+            }
+
+            rows[cells[1]] = cells[2].Trim('*', '`');
+        }
+
+        return rows;
+    }
+
+    /// <summary>A <c>2,290,276 bytes</c> cell as a number.</summary>
+    private static int ByteCount(string cell) =>
+        int.Parse(
+            cell.Replace(" bytes", string.Empty, StringComparison.Ordinal)
+                .Replace(",", string.Empty, StringComparison.Ordinal),
+            System.Globalization.CultureInfo.InvariantCulture);
 
     private static byte[] DecompressBrotli(byte[] compressed)
     {

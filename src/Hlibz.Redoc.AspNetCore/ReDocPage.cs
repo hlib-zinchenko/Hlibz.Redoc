@@ -183,7 +183,8 @@ internal static class ReDocPage
     /// through <c>textContent</c> and <c>setAttribute</c>, never <c>innerHTML</c>, so a label with
     /// markup in it is text on the page rather than markup in it.
     /// </remarks>
-    public static string ToolbarScript(IEnumerable<ReDocToolbarItem> items, string currentRoute)
+    public static string ToolbarScript(
+        IEnumerable<ReDocToolbarItem> items, string currentRoute, ReDocToolbarSpot spot)
     {
         using MemoryStream buffer = new();
         using (Utf8JsonWriter writer = new(buffer, new JsonWriterOptions { Indented = false }))
@@ -211,7 +212,7 @@ internal static class ReDocPage
             (function () {
               var items = {{json}};
 
-            {{ReDocToolbar.ScriptFunction}}
+            {{ReDocToolbar.ScriptFunctionFor(spot)}}
 
               function render() {
                 var toolbar = hlibzToolbar();
@@ -272,14 +273,45 @@ internal static class ReDocPage
         StringBuilder css = new();
         css.Append(baseCss);
         css.Append(ReDocToolbar.Css);
+        bool withItems = options.ToolbarItems.Count > 0;
         if (withPicker)
         {
             css.Append(ReDocDocumentPicker.Css).Append('\n');
         }
 
-        if (options.ToolbarItems.Count > 0)
+        if (withItems)
         {
             css.Append(ReDocToolbar.ItemCss).Append('\n');
+        }
+
+        // Only the placements something is actually in, so the stylesheet says what the page does.
+        if (PlacedAt(options, ReDocToolbarPlacement.BottomRight, withPicker, withItems))
+        {
+            css.Append(ReDocToolbar.BottomRightCss).Append('\n');
+        }
+
+        // Only when one horizontal strip holds both, which is the only time their order shows.
+        if (withPicker
+            && withItems
+            && options.PickerPlacement == options.ToolbarItemsPlacement
+            && options.PickerPlacement != ReDocToolbarPlacement.Sidebar)
+        {
+            css.Append(ReDocToolbar.PickerAfterItemsCss).Append('\n');
+        }
+
+        // Last of the four, so its own order rule outweighs the one above when a page has both a
+        // sidebar strip and a corner strip holding the picker and the links together.
+        if (PlacedAt(options, ReDocToolbarPlacement.Sidebar, withPicker, withItems))
+        {
+            css.Append(ReDocToolbar.SidebarCss).Append('\n');
+        }
+
+        // Before the accent, so an explicitly set PrimaryColor is the last word on the accent, and
+        // before AdditionalCss for the same reason.
+        if (ReDocThemePresets.Css(options.ThemePreset, withAccent: HasPresetAccent(options))
+            is { } preset)
+        {
+            css.Append(preset);
         }
 
         AppendBrandCss(css, options);
@@ -314,6 +346,33 @@ internal static class ReDocPage
     /// <c>--color-primary-base</c>, so they follow the accent with no extra rule.
     /// </para>
     /// </remarks>
+    /// <summary>Whether this page has a control at a given placement at all.</summary>
+    private static bool PlacedAt(
+        ReDocDocumentsOptions options,
+        ReDocToolbarPlacement placement,
+        bool withPicker,
+        bool withItems) =>
+        (withPicker && options.PickerPlacement == placement)
+        || (withItems && options.ToolbarItemsPlacement == placement);
+
+    /// <summary>
+    /// Core's spelling of a placement, which is the one the scripts are built from.
+    /// </summary>
+    public static ReDocToolbarSpot SpotOf(ReDocToolbarPlacement placement) => placement switch
+    {
+        ReDocToolbarPlacement.BottomRight => ReDocToolbarSpot.BottomRight,
+        ReDocToolbarPlacement.Sidebar => ReDocToolbarSpot.Sidebar,
+        _ => ReDocToolbarSpot.TopRight,
+    };
+
+    /// <summary>
+    /// Whether the accent on the page is the preset's. Naming either color takes it over: the
+    /// preset paints dark mode, so a <see cref="ReDocDocumentsOptions.PrimaryColor"/> meant for
+    /// both modes would otherwise be outweighed there by a selector one class heavier.
+    /// </summary>
+    private static bool HasPresetAccent(ReDocDocumentsOptions options) =>
+        options.PrimaryColor is null && options.DarkModePrimaryColor is null;
+
     private static void AppendBrandCss(StringBuilder css, ReDocDocumentsOptions options)
     {
         if (options.PrimaryColor is { } accent)
@@ -379,6 +438,20 @@ internal static class ReDocPage
               }
 
             """);
+
+        // Same thing for a preset's accent, which is picked for its own near-black surfaces: every
+        // preset names the shade of itself that reads on paper.
+        if (HasPresetAccent(options)
+            && ReDocThemePresets.PrintAccent(options.ThemePreset) is { } presetAccent)
+        {
+            css.Append($$"""
+                  :root:root.dark {
+                    --color-primary-base: {{presetAccent}};
+                    --link-color-primary: {{presetAccent}};
+                  }
+
+                """);
+        }
 
         // The dark accent was chosen to carry on a near-black page; on paper the light one is the
         // right choice, and it is already known to work against a light background.
