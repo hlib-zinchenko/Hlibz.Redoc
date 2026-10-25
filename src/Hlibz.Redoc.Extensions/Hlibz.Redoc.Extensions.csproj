@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Hlibz.Redoc.Extensions</RootNamespace>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Implies IsTrimmable. Only a claim about this assembly: the theme config still travels
+         through whichever host package serializes it, reflectively in both existing cases. -->
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <PropertyGroup Label="NuGet metadata">
+    <PackageId>Hlibz.Redoc.Extensions</PackageId>
+    <Authors>Hlib Zinchenko</Authors>
+    <Description>The host-agnostic engine behind the Hlibz ReDoc extensions: a dark theme with an optional Light/System/Dark switcher and accent color customization, font control, a print stylesheet, and a multi-document picker. This package on its own does nothing — install the adapter for your ReDoc host: Hlibz.Redoc.Extensions.RedocAspNetCore for Redoc.AspNetCore.</Description>
+    <PackageTags>redoc;openapi;swagger;aspnetcore;dark-theme;api-docs;documentation</PackageTags>
+    <PackageProjectUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.SourceLink.GitHub" PrivateAssets="All" />
+  </ItemGroup>
+
+  <!-- No host package: that is the point of this project. ASP.NET itself is common ground to every
+       host, so the document validation, route computation and prefix redirect live here. -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- The adapters and the tests drive this assembly's internals. Keeping them internal rather
+       than promoting a public composition API is deliberate: the public surface stays the options
+       types a consumer writes, and nothing here is a compatibility promise yet. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Hlibz.Redoc.Extensions.RedocAspNetCore" />
+    <InternalsVisibleTo Include="Hlibz.Redoc.Extensions.Swashbuckle" />
+    <InternalsVisibleTo Include="Hlibz.Redoc.AspNetCore" />
+    <InternalsVisibleTo Include="Hlibz.Redoc.Extensions.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\..\docs\icon.png" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

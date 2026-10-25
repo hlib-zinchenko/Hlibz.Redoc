@@ -1,7 +1,0 @@
-using System.ComponentModel;
-
-namespace Hlibz.Redoc.AspNetCore.Extensions.Sample.Models;
-
-public sealed record ErrorResponse(
-    [property: Description("Human-readable explanation of what went wrong.")] string Message,
-    [property: Description("Correlation identifier for locating this request in logs.")] string TraceId);

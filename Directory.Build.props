@@ -1,6 +1,12 @@
 <Project>
 
     <PropertyGroup>
+        <!-- Core, adapters and host version in lockstep. The release tag overrides this with
+             -p:Version, so it only matters for local packs and branch builds. -->
+        <Version>2.0.0-alpha</Version>
+    </PropertyGroup>
+
+    <PropertyGroup>
         <TargetFramework>net8.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>

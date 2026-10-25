@@ -4,11 +4,24 @@ Guidance for Claude Code when working in this repository.
 
 ## What this is
 
-A small NuGet package of add-ons for [Redoc.AspNetCore](https://www.nuget.org/packages/Redoc.AspNetCore)'s
-ReDoc UI middleware: a dark theme (a CSS string plus a ReDoc theme config dictionary), an optional
-Light/System/Dark theme selector, and a document picker that serves several OpenAPI documents as
-ReDoc pages with a dropdown between them. Renamed from `Hlibz.Redoc.AspNetCore.DarkTheme`;
-`UseDarkTheme()` must keep behaving as it did there.
+Add-ons for ReDoc UI middleware: a dark theme (a CSS string plus a ReDoc theme config dictionary),
+an optional Light/System/Dark theme selector, and a document picker that serves several OpenAPI
+documents as ReDoc pages with a dropdown between them.
+
+As of v2 this is **two packages**, not one. `Hlibz.Redoc.Extensions` is the host-agnostic engine;
+`Hlibz.Redoc.Extensions.RedocAspNetCore` is the adapter that wires it to
+[Redoc.AspNetCore](https://www.nuget.org/packages/Redoc.AspNetCore)'s `ReDocOptions`. The split
+exists because `Redoc.AspNetCore` is effectively abandoned while
+`Swashbuckle.AspNetCore.ReDoc` has ~300× the downloads, and a package that extends one host's
+`ReDocOptions` type can never serve the other. Adapters have to be separate packages: NuGet has no
+optional dependencies, so one package referencing both hosts would make every consumer download two
+embedded ReDoc bundles.
+
+Lineage, and the compatibility it obliges: `Hlibz.Redoc.AspNetCore.DarkTheme` →
+`Hlibz.Redoc.AspNetCore.Extensions` → `Hlibz.Redoc.Extensions.RedocAspNetCore`. `UseDarkTheme()`
+must keep behaving as it did in all of them. Namespace is `Hlibz.Redoc.Extensions` for everything,
+core and adapters alike, so a consumer writes one `using` whichever adapter they installed — the
+assembly name and the namespace deliberately differ for the adapters.
 
 ## Requires
 
@@ -20,24 +33,53 @@ ReDoc pages with a dropdown between them. Renamed from `Hlibz.Redoc.AspNetCore.D
 # Build everything
 dotnet build
 
-# Run all tests
-dotnet test --project tests/Hlibz.Redoc.AspNetCore.Extensions.Tests
+# Run the tests — two suites, one per project under test
+dotnet test --project tests/Hlibz.Redoc.Extensions.Tests
+dotnet test --project tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests
 
 # Run the sample app (opens http://localhost:5299/api-docs automatically, see launchSettings.json)
-dotnet run --project samples/Hlibz.Redoc.AspNetCore.Extensions.Sample
+dotnet run --project samples/Sample.RedocAspNetCore
 
-# Pack the library locally
-dotnet pack src/Hlibz.Redoc.AspNetCore.Extensions -c Release -o ./nupkg
+# Pack both packages locally
+dotnet pack src/Hlibz.Redoc.Extensions -c Release -o ./nupkg
+dotnet pack src/Hlibz.Redoc.Extensions.RedocAspNetCore -c Release -o ./nupkg
 ```
 
 Test projects use Microsoft Testing Platform (`test.runner` in `global.json`), so `dotnet test`
-needs `--project <path>` rather than a bare directory argument.
+needs `--project <path>` rather than a bare directory argument — which is also why there is no
+one-command "run all tests": each suite gets its own invocation, in CI too.
 
 ## Architecture
 
-- `src/Hlibz.Redoc.AspNetCore.Extensions/` — the library. Two public entry points:
+- `src/Hlibz.Redoc.Extensions.RedocAspNetCore/` — the adapter, and the whole host-specific
+  surface: three files holding the two public entry points,
   `RedocOptionsExtensions.UseDarkTheme(this ReDocOptions, Action<DarkThemeOptions>?)` and
-  `ReDocDocumentsBuilderExtensions.UseReDocDocuments(this IApplicationBuilder, ...)`.
+  `ReDocDocumentsBuilderExtensions.UseReDocDocuments(this IApplicationBuilder, ...)`, plus
+  `ReDocDocumentsOptions : ReDocDocumentsOptionsBase` adding the one genuinely host-typed member,
+  `ConfigureReDoc` (`Action<ReDocOptions, ReDocDocument>`). Deriving the options rather than
+  generalizing them keeps the public type name a consumer writes as `ReDocDocumentsOptions` on
+  every host. `UseReDocDocuments` is ~25 lines: build options, call `ReDocDocumentsPlan.Build`,
+  loop its pages calling `UseReDoc`. The `ArgumentNullException.ThrowIfNull` pair stays here rather
+  than moving into `Build`, so the null checks still run before a caller's `configure` does.
+- `src/Hlibz.Redoc.Extensions/` — core: everything that doesn't touch a host's `ReDocOptions`.
+  It keeps `FrameworkReference Microsoft.AspNetCore.App` but references no host package — ASP.NET
+  is common ground to every host, so document validation, route computation and the prefix redirect
+  live here instead of being duplicated per adapter. CI asserts the packed nuspec has no host
+  dependency.
+  - Core's workhorses stay `internal`; the adapters, the future host and the core test project
+    reach them through `InternalsVisibleTo` entries in core's csproj, listed **by assembly name** —
+    renaming any of those projects means editing that list. This is deliberately not a public
+    composition API: the public surface is still only the options types a consumer writes, so
+    nothing in here is a compatibility promise yet. The cost is that a third party can't write
+    their own adapter. V2-PLAN's "core emits a model with two renderers" idea is the eventual
+    replacement; don't build it before phase 3 needs it.
+  - `ReDocDocumentsOptionsBase` — the neutral options (`RoutePrefix`,
+    `RedirectToFirstDocument`, `SpecUrlTemplate`, `ValidateDocumentNames`, `Links`).
+  - `ReDocDocumentsPlan` (internal) — everything `UseReDocDocuments` works out before it touches a
+    host: `Validate`/`ValidateRoutes`/`RouteOf`, the document-name check, the prefix redirect, and
+    per-page `SpecUrlOf`/`DocumentTitleOf`/`PickerFor`. Its exception messages and `paramName`s
+    name the *public extension method's* parameters (`"documents"`, `"configure"`), not its own —
+    they moved verbatim and tests assert on them.
   - `DarkThemeOptions` — customization surface: `PrimaryColor`/`PrimaryColorLight`/
     `PrimaryColorDark`/`AdditionalCss`, plus the font, `Favicon` and `PrintStyles` settings below.
     Everything else in the palette (success/warning/error/grays/etc.) is intentionally fixed —
@@ -75,18 +117,19 @@ needs `--project <path>` rather than a bare directory argument.
     custom `PrimaryColor` without also specifying explicit light/dark shades. The zero-config
     default path uses fixed, hand-picked values instead of the computed fallback.
   - `UseReDocDocuments` mounts one `UseReDoc` page per `ReDocDocument`, configured by
-    `ReDocDocumentsOptions` (`RoutePrefix`, `RedirectToFirstDocument`, `SpecUrlTemplate`, `Links`,
-    `ConfigureReDoc`). `UseReDoc` runs its setup action immediately, so all routes are computed up
-    front (`ReDocDocumentPage`), and `ConfigureReDoc` may not change `RoutePrefix` (it throws).
+    `ReDocDocumentsOptions`. `UseReDoc` runs its setup action immediately, so all routes are
+    computed up front (`ReDocDocumentPage`, via `ReDocDocumentsPlan`), and `ConfigureReDoc` may not
+    change `RoutePrefix` (it throws).
     Redoc.AspNetCore always serves a page at `{PathBase}/{route}/index.html`, so
     `ReDocDocumentPicker` (internal) builds each page's hrefs relative to its own route depth
     (`../` per segment). The hrefs need no PathBase and survive path-rewriting proxies. `~/` link URLs
     resolve the same way. The picker JSON is embedded in a `<script>` and relies on
     `ReDocPickerJson`, a source-generated `JsonSerializerContext` (the reflection-based
     `JsonSerializer.Serialize` overloads aren't trim/AOT-clean), whose default escaping makes the
-    JSON safe inside `<script>`. `DocumentTitle` is HTML-encoded because Redoc.AspNetCore writes it
-    into `<title>` raw.
-  - `OpenApiDocumentNames` (internal) backs `ReDocDocumentsOptions.ValidateDocumentNames` (on by
+    JSON safe inside `<script>`. `DocumentTitle` is HTML-encoded (`ReDocDocumentsPlan`
+    `.DocumentTitleOf`) because Redoc.AspNetCore writes it into `<title>` raw — as does every host
+    so far, which is why the encoding sits in core rather than the adapter.
+  - `OpenApiDocumentNames` (internal) backs `ReDocDocumentsOptionsBase.ValidateDocumentNames` (on by
     default): a configured name that isn't a registered OpenAPI document throws at startup instead
     of serving a page whose spec 404s. It resolves the *internal*
     `Microsoft.Extensions.ApiDescriptions.IDocumentProvider` by type name across loaded assemblies
@@ -106,7 +149,7 @@ needs `--project <path>` rather than a bare directory argument.
     accent-fg) with light values under `:where(html)` (zero specificity).
     `ReDocDarkThemeDefaults.BuildHeadContent` overrides them under the dark root selector, so both
     controls follow the active theme without knowing which features are on.
-- `samples/Hlibz.Redoc.AspNetCore.Extensions.Sample/` — a minimal API used both as a runnable demo
+- `samples/Sample.RedocAspNetCore/` — a minimal API used both as a runnable demo
   and to produce the README screenshot (`/api-docs/widgets/`, dark via System). It serves 3
   documents through `UseReDocDocuments`: `widgets`, `manufacturers` and `facilities`. Each is
   registered with `AddOpenApi(name)`, and each endpoint is tagged with `.WithGroupName(name)`,
@@ -118,27 +161,45 @@ needs `--project <path>` rather than a bare directory argument.
   own negative response (`400`/`404`) with a distinct model to check
   multiple response-schema/status-tab combinations render correctly, and every property carries a
   `[Description]` so field descriptions are visible everywhere.
-- `tests/Hlibz.Redoc.AspNetCore.Extensions.Tests/` — smoke tests on the built config
-  dictionary/head content shape. The `UseReDocDocuments` tests build a real pipeline with
-  `WebApplication.CreateSlimBuilder()` and request `/{route}/index.html`, so they check the picker
-  through the public API without `InternalsVisibleTo`. This project overrides `TargetFramework` to
-  `net10.0` and references `Microsoft.AspNetCore.OpenApi` and `Swashbuckle.AspNetCore.SwaggerGen`
-  (test-only) so the document-name check runs against the real providers — the type and method
-  names it resolves by string are the fragile part, and a stand-in wouldn't protect them. The
-  library under test is still its `net8.0` assembly. Swashbuckle must be ≥ 10.x: 9.x pins
-  Microsoft.OpenApi 1.x, which collides with what `Microsoft.AspNetCore.OpenApi` 10.x brings in.
+- `tests/Hlibz.Redoc.Extensions.Tests/` — the host-free suite, on the library's own `net8.0`, with
+  no host reference. It asserts on what `ReDocDarkThemeDefaults.BuildHeadContent`/`BuildConfigValue`
+  produce, reached directly through `InternalsVisibleTo`, so those assertions hold for every host
+  rather than only the one that happens to be wired up. Anything that is really a statement about
+  the theme, the selector, the fonts or the picker belongs here, not in an adapter suite.
+- `tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests/` — what genuinely needs this host:
+  that `UseDarkTheme` writes to `ConfigObject.AdditionalItems` and `HeadContent` at all, the
+  `IndexStream` rewrite against Redoc.AspNetCore's *actual* stock `index.html` (the font `<link>`
+  being present then stripped while `%(HeadContent)` and `redoc.standalone.js` survive), and the
+  `UseReDocDocuments` pipeline tests, which build a real pipeline with
+  `WebApplication.CreateSlimBuilder()` and request `/{route}/index.html` — so the picker is checked
+  through the public API. This project overrides `TargetFramework` to `net10.0` and references
+  `Microsoft.AspNetCore.OpenApi` and `Swashbuckle.AspNetCore.SwaggerGen` (test-only) so the
+  document-name check runs against the real providers — the type and method names it resolves by
+  string are the fragile part, and a stand-in wouldn't protect them. The library under test is
+  still its `net8.0` assembly. Swashbuckle must be ≥ 10.x: 9.x pins Microsoft.OpenApi 1.x, which
+  collides with what `Microsoft.AspNetCore.OpenApi` 10.x brings in.
+- Refactors that move code between core and an adapter are checked by capturing every string the
+  library emits before and after and diffing them, not just by the test suites: the head content is
+  one large string and a lost newline passes every `Contains` assertion. V2-PLAN's phase 2
+  conformance suite is the permanent version of that idea.
 
 ## Releasing
 
-`.github/workflows/release.yml` runs on a pushed `vX.Y.Z` tag: it builds/tests, packs
-`src/Hlibz.Redoc.AspNetCore.Extensions` with `-p:Version` from the tag, and publishes via NuGet
-Trusted Publishing (OIDC, no API key; see
-https://learn.microsoft.com/nuget/nuget-org/trusted-publishing). The job uses the `release` GitHub
-Environment (must match the Environment on the nuget.org trusted-publishing policy) and a
-`${{ secrets.NUGET_USER }}` repo secret holding the nuget.org profile username (not the email).
+`.github/workflows/release.yml` runs on a pushed `vX.Y.Z` tag: it builds/tests, packs every project
+under `src/` with `-p:Version` from the tag, and publishes via NuGet Trusted Publishing (OIDC, no
+API key; see https://learn.microsoft.com/nuget/nuget-org/trusted-publishing). The job uses the
+`release` GitHub Environment (must match the Environment on the nuget.org trusted-publishing
+policy) and a `${{ secrets.NUGET_USER }}` repo secret holding the nuget.org profile username (not
+the email).
 
-To publish: don't bump anything in the csproj (the tag drives the version), just
+To publish: don't bump anything (the tag drives the version — `Version` in
+`Directory.Build.props` is only the local/branch default), just
 `git tag vX.Y.Z && git push origin vX.Y.Z`.
+
+**Every package ID needs its own trusted-publishing policy on nuget.org, created before the first
+tag that would publish it** — a new ID without one fails the push. Adding a project under `src/`
+therefore means adding it to the release workflow's pack list *and* creating that policy. Policies
+reference `owner/repo`, so a repo rename means updating all of them.
 
 ## Conventions
 
@@ -146,6 +207,8 @@ To publish: don't bump anything in the csproj (the tag drives the version), just
   lines — see `.editorconfig`.
 - `Directory.Packages.props` manages package versions centrally; csproj files reference packages
   without a `Version=` attribute.
+- `Version` lives in `Directory.Build.props`, not in any csproj: core, the adapters and the host
+  ship in lockstep, so one `-p:Version` from the release tag has to drive all of them.
 - No StyleCop/SonarAnalyzer: this is a small single-purpose package, kept intentionally
   lightweight. `TreatWarningsAsErrors` is still on.
 - The library sets `IsAotCompatible`, so the trim/AOT analyzers run with warnings as errors: new

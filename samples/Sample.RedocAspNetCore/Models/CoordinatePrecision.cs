@@ -1,0 +1,8 @@
+using System.ComponentModel;
+
+namespace Sample.RedocAspNetCore.Models;
+
+public sealed record CoordinatePrecision(
+    [property: Description("Horizontal accuracy in meters.")] double HorizontalMeters,
+    [property: Description("Vertical accuracy in meters.")] double VerticalMeters,
+    [property: Description("The geodetic datum the coordinates are expressed in.")] GeodeticDatum Datum);

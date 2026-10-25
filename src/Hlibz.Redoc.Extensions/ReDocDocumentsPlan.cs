@@ -1,0 +1,226 @@
+using System.Net;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+
+namespace Hlibz.Redoc.Extensions;
+
+/// <summary>
+/// Everything <c>UseReDocDocuments</c> works out before it touches a host: the validated set of
+/// pages and their routes, each page's spec URL, title and picker markup, and the prefix redirect.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Only the per-page <c>UseReDoc</c> call is host-specific, so an adapter is left with building
+/// its options, calling <see cref="Build"/>, and looping <see cref="Pages"/>. Everything in here
+/// moved out of the original single-host <c>ReDocDocumentsBuilderExtensions</c> unchanged,
+/// including the exception messages and their <c>paramName</c>s, which name the public extension
+/// method's parameters rather than this type's.
+/// </para>
+/// <para>
+/// Routes are computed up front, before the first page is built, because every host's
+/// <c>UseReDoc</c> runs its setup action immediately and each page's picker links to all of them.
+/// </para>
+/// </remarks>
+internal sealed class ReDocDocumentsPlan
+{
+    private readonly ReDocDocumentsOptionsBase options;
+    private readonly IReadOnlyList<ReDocLink> links;
+
+    private ReDocDocumentsPlan(
+        IReadOnlyList<ReDocDocumentPage> pages,
+        IReadOnlyList<ReDocLink> links,
+        ReDocDocumentsOptionsBase options)
+    {
+        Pages = pages;
+        this.links = links;
+        this.options = options;
+    }
+
+    /// <summary>The pages to mount, in picker order.</summary>
+    public IReadOnlyList<ReDocDocumentPage> Pages { get; }
+
+    /// <summary>
+    /// Validates the documents, computes their routes, registers the prefix redirect when one is
+    /// wanted, and checks the document names against the app's registered OpenAPI documents.
+    /// </summary>
+    public static ReDocDocumentsPlan Build(
+        IApplicationBuilder app,
+        IEnumerable<ReDocDocument> documents,
+        ReDocDocumentsOptionsBase options)
+    {
+        string prefix = options.RoutePrefix.Trim('/');
+        IReadOnlyList<ReDocDocument> docs = [.. documents];
+        IReadOnlyList<ReDocLink> links = [.. options.Links];
+        Validate(docs, links);
+
+        IReadOnlyList<ReDocDocumentPage> pages =
+            [.. docs.Select(doc => new ReDocDocumentPage(doc, RouteOf(doc, prefix)))];
+        ValidateRoutes(pages);
+
+        ReDocDocumentsPlan plan = new(pages, links, options);
+        plan.ValidateDocumentNames(app);
+
+        bool prefixIsAPage = pages.Any(
+            page => string.Equals(page.Route, prefix, StringComparison.OrdinalIgnoreCase));
+        if (options.RedirectToFirstDocument && !prefixIsAPage)
+        {
+            UseRedirect(app, prefix, pages[0].Route);
+        }
+
+        return plan;
+    }
+
+    /// <summary>
+    /// The spec URL for a document: its own, or the template with its name filled in.
+    /// </summary>
+    public string SpecUrlOf(ReDocDocument doc) =>
+        doc.SpecUrl ?? options.SpecUrlTemplate.Replace("{documentName}", doc.Name);
+
+    /// <summary>
+    /// The document's title, HTML-encoded: every host so far writes it into <c>&lt;title&gt;</c>
+    /// as-is.
+    /// </summary>
+    public string DocumentTitleOf(ReDocDocument doc) =>
+        WebUtility.HtmlEncode(doc.DisplayName ?? doc.Name);
+
+    /// <summary>The picker markup for one page, to append to that page's head content.</summary>
+    public string PickerFor(ReDocDocumentPage page) =>
+        ReDocDocumentPicker.Build(Pages, links, page);
+
+    private static string RouteOf(ReDocDocument doc, string prefix)
+    {
+        if (doc.Route is not null)
+        {
+            return doc.Route.Trim('/');
+        }
+
+        return prefix.Length == 0 ? doc.Name : $"{prefix}/{doc.Name}";
+    }
+
+    private static void UseRedirect(IApplicationBuilder app, string prefix, string firstRoute)
+    {
+        string root = prefix.Length == 0 ? string.Empty : $"/{prefix}";
+        string target = firstRoute.Length == 0 ? "/" : $"/{firstRoute}/";
+
+        app.Use((context, next) =>
+        {
+            string path = context.Request.Path.Value ?? string.Empty;
+            if (HttpMethods.IsGet(context.Request.Method)
+                && (string.Equals(path, root, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(path, $"{root}/", StringComparison.OrdinalIgnoreCase)))
+            {
+                context.Response.Redirect($"{context.Request.PathBase}{target}");
+                return Task.CompletedTask;
+            }
+
+            return next(context);
+        });
+    }
+
+    private static void Validate(IReadOnlyList<ReDocDocument> docs, IReadOnlyList<ReDocLink> links)
+    {
+        if (docs.Count == 0)
+        {
+            throw new ArgumentException("At least one document is required.", "documents");
+        }
+
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        foreach (ReDocDocument doc in docs)
+        {
+            if (string.IsNullOrWhiteSpace(doc.Name) || doc.Name.Contains('/'))
+            {
+                throw new ArgumentException(
+                    $"Document name '{doc.Name}' must be non-empty and contain no '/'.", "documents");
+            }
+
+            if (!seen.Add(doc.Name))
+            {
+                throw new ArgumentException($"Duplicate document name '{doc.Name}'.", "documents");
+            }
+        }
+
+        foreach (ReDocLink link in links)
+        {
+            if (string.IsNullOrWhiteSpace(link.Label) || string.IsNullOrWhiteSpace(link.Url))
+            {
+                throw new ArgumentException(
+                    "Every picker link needs a non-empty label and URL.", "configure");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Fails fast when a document name doesn't match any registered OpenAPI document. The page
+    /// would otherwise mount fine and the app start clean, because only the browser's spec
+    /// request 404s — so the mistake would surface in ReDoc's error screen and nowhere else.
+    /// </summary>
+    private void ValidateDocumentNames(IApplicationBuilder app)
+    {
+        // Without the placeholder, names don't drive spec URLs, so there is nothing to check.
+        if (!options.ValidateDocumentNames
+            || !options.SpecUrlTemplate.Contains("{documentName}", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        // A document with an explicit SpecUrl says where its spec is, whoever serves it.
+        ReDocDocumentPage[] checkable =
+            [.. Pages.Where(page => page.Document.SpecUrl is null)];
+        if (checkable.Length == 0)
+        {
+            return;
+        }
+
+        HashSet<string>? registered = OpenApiDocumentNames.TryResolve(app.ApplicationServices);
+        if (registered is null)
+        {
+            return;
+        }
+
+        ReDocDocumentPage[] missing =
+            [.. checkable.Where(page => !registered.Contains(page.Document.Name))];
+        if (missing.Length == 0)
+        {
+            return;
+        }
+
+        IEnumerable<string> details = missing.Select(page =>
+            $"  - '{page.Document.Name}': page '/{page.Route}/' would load an empty spec from " +
+            $"'{SpecUrlOf(page.Document)}'.");
+        string names = string.Join(", ", registered.Order().Select(name => $"'{name}'"));
+        string known = registered.Count == 0
+            ? "No OpenAPI documents are registered."
+            : $"Registered documents: {names}.";
+
+        throw new InvalidOperationException(
+            "UseReDocDocuments was given OpenAPI document names that aren't registered:\n"
+            + string.Join('\n', details) + '\n' + known + '\n'
+            + "Fix the name, register the document with AddOpenApi(name) or Swashbuckle's "
+            + "SwaggerDoc(name, ...), set ReDocDocument.SpecUrl if its spec is served from "
+            + "somewhere else, or set ReDocDocumentsOptions.ValidateDocumentNames = false to skip "
+            + "this check.");
+    }
+
+    private static void ValidateRoutes(IReadOnlyList<ReDocDocumentPage> pages)
+    {
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        foreach (ReDocDocumentPage page in pages)
+        {
+            if (page.Route.Contains("//", StringComparison.Ordinal)
+                || page.Route.IndexOfAny(['?', '#', '\\']) >= 0)
+            {
+                throw new ArgumentException(
+                    $"Route '{page.Route}' of document '{page.Document.Name}' must be a plain " +
+                    "path.",
+                    "documents");
+            }
+
+            if (!seen.Add(page.Route))
+            {
+                throw new ArgumentException(
+                    $"Documents share the route '{page.Route}'; every page needs its own.",
+                    "documents");
+            }
+        }
+    }
+}

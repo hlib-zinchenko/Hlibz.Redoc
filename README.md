@@ -1,6 +1,6 @@
 ![Hlibz.Redoc.AspNetCore.Extensions icon](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/main/docs/icon.png)
 
-# Hlibz.Redoc.AspNetCore.Extensions
+# Hlibz.Redoc.Extensions
 
 Add-ons for [Redoc.AspNetCore](https://www.nuget.org/packages/Redoc.AspNetCore)'s ReDoc UI
 middleware:
@@ -13,8 +13,8 @@ middleware:
   switch between them, like Swagger UI's definition selector.
 
 [![CI](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/actions/workflows/ci.yml)
-[![NuGet](https://img.shields.io/nuget/v/Hlibz.Redoc.AspNetCore.Extensions.svg)](https://www.nuget.org/packages/Hlibz.Redoc.AspNetCore.Extensions)
-[![NuGet Downloads](https://img.shields.io/nuget/dt/Hlibz.Redoc.AspNetCore.Extensions.svg)](https://www.nuget.org/packages/Hlibz.Redoc.AspNetCore.Extensions)
+[![NuGet](https://img.shields.io/nuget/v/Hlibz.Redoc.Extensions.RedocAspNetCore.svg)](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.RedocAspNetCore)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/Hlibz.Redoc.Extensions.RedocAspNetCore.svg)](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.RedocAspNetCore)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/LICENSE)
 
 ![Dark ReDoc UI screenshot](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/main/docs/screenshot.png)
@@ -248,13 +248,20 @@ static files served alongside documents you do register.
 ## Install
 
 ```bash
-dotnet add package Hlibz.Redoc.AspNetCore.Extensions
+dotnet add package Hlibz.Redoc.Extensions.RedocAspNetCore
 ```
+
+Then `using Hlibz.Redoc.Extensions;`.
+
+This is the adapter for [Redoc.AspNetCore](https://www.nuget.org/packages/Redoc.AspNetCore); it
+brings in `Hlibz.Redoc.Extensions`, the host-agnostic engine, on its own. It replaces
+`Hlibz.Redoc.AspNetCore.Extensions`, which was the same code built against one host — migrating is
+a package swap and a `using` change, with no API change.
 
 ## Running the sample locally
 
 ```bash
-dotnet run --project samples/Hlibz.Redoc.AspNetCore.Extensions.Sample
+dotnet run --project samples/Sample.RedocAspNetCore
 ```
 
 This opens `http://localhost:5299/api-docs` in your browser automatically. It redirects to
