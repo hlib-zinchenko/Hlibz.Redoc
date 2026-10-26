@@ -231,7 +231,8 @@ A documentation site is set up one of three ways. Only the third needs anything 
 | **3. Mixed**: public API, internal document beside it | one gated | that one gated | `.RequireAuthorization(…)` on the document |
 
 Each is asserted as a test, as the status codes an anonymous caller gets, so the examples can't
-drift from what the package does.
+drift from what the package does — and so is shape 2 behind a browser password prompt, for a test
+server, below.
 
 **1. All public** — the default, unchanged by any of this:
 
@@ -248,6 +249,115 @@ option. Two calls, both ends closed:
 app.MapOpenApi().RequireAuthorization();
 app.MapReDocDocuments(documents).RequireAuthorization();
 ```
+
+**2a. All internal, behind a password prompt** — the same shape for a test server you'd rather not
+put behind a VPN: the browser asks for a username and password before showing anything under
+`/api-docs`, and the API itself is left as it was. ASP.NET Core has no Basic authentication handler
+of its own, so this is one you copy:
+
+```csharp
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Encodings.Web;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Options;
+
+// One username and password from configuration (Docs:User, Docs:Password), for the docs only.
+// Serve it over HTTPS: Basic sends both, merely base64-encoded, with every request.
+public sealed class DocsBasicAuthenticationHandler(
+    IOptionsMonitor<AuthenticationSchemeOptions> options,
+    ILoggerFactory logger,
+    UrlEncoder encoder,
+    IConfiguration configuration)
+    : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)
+{
+    public const string SchemeName = "DocsBasic";
+
+    protected override Task<AuthenticateResult> HandleAuthenticateAsync()
+    {
+        string header = Request.Headers.Authorization.ToString();
+        if (!header.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.FromResult(AuthenticateResult.NoResult());
+        }
+
+        string? user = configuration["Docs:User"];
+        string? password = configuration["Docs:Password"];
+        if (string.IsNullOrEmpty(user) || string.IsNullOrEmpty(password))
+        {
+            // Unconfigured means nobody gets in, never that anybody does.
+            return Task.FromResult(AuthenticateResult.Fail("Docs:User/Password not set."));
+        }
+
+        byte[] given;
+        try
+        {
+            given = Convert.FromBase64String(header["Basic ".Length..].Trim());
+        }
+        catch (FormatException)
+        {
+            return Task.FromResult(AuthenticateResult.Fail("Malformed Basic credentials."));
+        }
+
+        byte[] expected = Encoding.UTF8.GetBytes($"{user}:{password}");
+        if (!CryptographicOperations.FixedTimeEquals(given, expected))
+        {
+            return Task.FromResult(AuthenticateResult.Fail("Wrong username or password."));
+        }
+
+        ClaimsIdentity identity = new([new Claim(ClaimTypes.Name, user)], SchemeName);
+        return Task.FromResult(AuthenticateResult.Success(
+            new AuthenticationTicket(new ClaimsPrincipal(identity), SchemeName)));
+    }
+
+    // The WWW-Authenticate header is what makes the browser show its password prompt.
+    protected override Task HandleChallengeAsync(AuthenticationProperties properties)
+    {
+        Response.StatusCode = StatusCodes.Status401Unauthorized;
+        Response.Headers.WWWAuthenticate = "Basic realm=\"API docs\", charset=\"UTF-8\"";
+        return Task.CompletedTask;
+    }
+}
+```
+
+Then register it under a policy that names the scheme, so it touches nothing but the docs — the
+API keeps whatever authentication it already had, or none:
+
+```csharp
+builder.Services.AddAuthentication()
+    .AddScheme<AuthenticationSchemeOptions, DocsBasicAuthenticationHandler>(
+        DocsBasicAuthenticationHandler.SchemeName, configureOptions: null);
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("Docs", policy => policy
+        .AddAuthenticationSchemes(DocsBasicAuthenticationHandler.SchemeName)
+        .RequireAuthenticatedUser());
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+// No MapOpenApi(): with ServeSpecs each page serves its own document, so this one policy covers
+// the pages, their scripts, the ReDoc bundle and every spec.
+app.MapReDocDocuments(documents, options => options.ServeSpecs = true)
+   .RequireAuthorization("Docs");
+```
+
+Without the right password, that serves:
+
+```
+GET /api-docs                              401   (WWW-Authenticate: Basic)
+GET /api-docs/public/                      401
+GET /api-docs/public/openapi.json          401
+GET /api-docs/_redoc/redoc.standalone.js   401
+GET /openapi/public.json                   404   (not mapped)
+```
+
+With it, everything answers as it would unprotected. The browser resends the credentials on every
+request to the site, so the page's own fetch of `openapi.json` needs nothing extra. If you keep
+`MapOpenApi()` for a client generator, gate it with the same `.RequireAuthorization("Docs")`. Basic
+authentication has no sign-out: a browser keeps the credentials until it is closed. And a password
+in the URL (`https://user:pass@host/…`) gets the page but not the spec, because browsers refuse to
+`fetch` a URL carrying credentials — type it into the prompt instead.
 
 **3. Mixed** — a public API with an internal document beside it. This is the one `MapOpenApi` can't
 express, because it has no per-document seam: gating there is every spec or none. Say it on the

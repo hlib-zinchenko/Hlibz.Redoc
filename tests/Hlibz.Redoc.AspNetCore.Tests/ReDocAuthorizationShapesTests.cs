@@ -1,7 +1,10 @@
 using System.Net;
+using System.Text;
 
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 using Xunit;
@@ -35,6 +38,14 @@ public class ReDocAuthorizationShapesTests
     private const string InternalSpec = "/api-docs/internal/openapi.json";
     private const string MappedPublicSpec = "/openapi/public.json";
     private const string MappedInternalSpec = "/openapi/internal.json";
+    private const string BundlePath = "/api-docs/_redoc/redoc.standalone.js";
+
+    /// <summary>The right credentials for shape 2a.</summary>
+    private static readonly (string Name, string Value) Right = Basic("docs:test-password");
+
+    /// <summary>Every URL shape 2a's site answers on, redirect and bundle included.</summary>
+    private static readonly string[] BasicAuthSite =
+        ["/api-docs", PublicPage, PublicSpec, "/api-docs/public/redoc-init.js", BundlePath];
 
     /// <summary>Two plain documents: whatever gating happens, happens at the call site.</summary>
     private static IEnumerable<ReDocDocument> Open =>
@@ -73,6 +84,52 @@ public class ReDocAuthorizationShapesTests
         Assert.Equal(HttpStatusCode.Redirect, await StatusOf(app, InternalPage));
         Assert.Equal(HttpStatusCode.Redirect, await StatusOf(app, MappedPublicSpec));
         Assert.Equal(HttpStatusCode.Redirect, await StatusOf(app, MappedInternalSpec));
+    }
+
+    [Fact]
+    public async Task EverythingInternal_BehindBasicAuth_PromptsForEveryDocsUrlAndNothingElse()
+    {
+        await using ReDocTestApp app = await StartBehindBasicAuthAsync();
+
+        // Anonymous: every URL of the site asks for the password, the prefix redirect and the
+        // bundle included — and asks with WWW-Authenticate, which is what makes the browser show
+        // its prompt rather than a blank 401.
+        foreach (string path in BasicAuthSite)
+        {
+            HttpResponseMessage response = await app.GetAsync(path);
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+            Assert.Equal("Basic", Assert.Single(response.Headers.WwwAuthenticate).Scheme);
+        }
+
+        // A wrong password and a header that isn't base64 are the same refusal, not a 500.
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            await StatusOf(app, PublicPage, Basic("docs:wrong")));
+        Assert.Equal(
+            HttpStatusCode.Unauthorized,
+            await StatusOf(app, PublicPage, ("Authorization", "Basic not-base64!")));
+
+        // The right one opens all of it, the redirect still redirecting.
+        Assert.Equal(HttpStatusCode.Redirect, await StatusOf(app, "/api-docs", Right));
+        Assert.Equal(HttpStatusCode.OK, await StatusOf(app, PublicPage, Right));
+        Assert.Equal(HttpStatusCode.OK, await StatusOf(app, PublicSpec, Right));
+        Assert.Equal(HttpStatusCode.OK, await StatusOf(app, BundlePath, Right));
+
+        // No MapOpenApi, so no second way to the spec; and the policy names its scheme, so the
+        // app's own endpoints are untouched by it.
+        Assert.Equal(HttpStatusCode.NotFound, await StatusOf(app, MappedPublicSpec));
+        Assert.Equal(HttpStatusCode.OK, await StatusOf(app, "/api/ping"));
+    }
+
+    [Fact]
+    public async Task EverythingInternal_BehindBasicAuth_LetsNobodyInWhenUnconfigured()
+    {
+        await using ReDocTestApp app = await StartBehindBasicAuthAsync(configured: false);
+
+        // A missing password must lock the site rather than open it — in particular to the empty
+        // credentials ":", which is what "user:password" becomes when neither is set.
+        Assert.Equal(HttpStatusCode.Unauthorized, await StatusOf(app, PublicPage, Basic(":")));
+        Assert.Equal(HttpStatusCode.Unauthorized, await StatusOf(app, PublicPage, Right));
     }
 
     [Fact]
@@ -130,10 +187,54 @@ public class ReDocAuthorizationShapesTests
         Assert.Equal(HttpStatusCode.OK, await StatusOf(app, MappedInternalSpec));
     }
 
-    private static async Task<HttpStatusCode> StatusOf(ReDocTestApp app, string path)
+    private static async Task<HttpStatusCode> StatusOf(
+        ReDocTestApp app, string path, params (string Name, string Value)[] headers)
     {
-        HttpResponseMessage response = await app.GetAsync(path);
+        HttpResponseMessage response = await app.GetAsync(path, headers);
         return response.StatusCode;
+    }
+
+    private static (string Name, string Value) Basic(string credentials) =>
+        ("Authorization", $"Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes(credentials))}");
+
+    /// <summary>
+    /// Shape 2a as the README writes it: the copied handler under a policy naming its scheme,
+    /// <c>ServeSpecs</c> on, no <c>MapOpenApi</c>, and one <c>RequireAuthorization("Docs")</c>.
+    /// </summary>
+    private static Task<ReDocTestApp> StartBehindBasicAuthAsync(bool configured = true)
+    {
+        IReadOnlyList<ReDocDocument> docs = [new ReDocDocument("public")];
+
+        return ReDocTestApp.StartAsync(
+            docs,
+            options => options.ServeSpecs = true,
+            configureServices: builder =>
+            {
+                if (configured)
+                {
+                    builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+                    {
+                        ["Docs:User"] = "docs",
+                        ["Docs:Password"] = "test-password",
+                    });
+                }
+
+                builder.Services.AddOpenApi("public");
+                builder.Services.AddAuthentication()
+                    .AddScheme<AuthenticationSchemeOptions, DocsBasicAuthenticationHandler>(
+                        DocsBasicAuthenticationHandler.SchemeName, configureOptions: null);
+                builder.Services.AddAuthorizationBuilder()
+                    .AddPolicy("Docs", policy => policy
+                        .AddAuthenticationSchemes(DocsBasicAuthenticationHandler.SchemeName)
+                        .RequireAuthenticatedUser());
+            },
+            configureApp: web =>
+            {
+                web.UseAuthentication();
+                web.UseAuthorization();
+                web.MapGet("/api/ping", () => "pong");
+            },
+            configureEndpoints: docs => docs.RequireAuthorization("Docs"));
     }
 
     private static Task<ReDocTestApp> StartAsync(

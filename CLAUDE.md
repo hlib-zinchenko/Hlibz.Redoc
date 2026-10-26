@@ -426,9 +426,11 @@ takes one project at a time.
   holds the README's three setup examples (all public / all internal / mixed) as the status codes
   an anonymous caller gets, including the one that still leaks — a gated document with
   `MapOpenApi` left open — so a reader choosing a shape is choosing on something that can't drift.
-  Edit the README's examples and that file together. `ReDocGatedDocumentTests` is the mechanism
-  under those shapes: which endpoints carry the policy, the site-wide spec implication, and the
-  four ways gating refuses rather than half-working. It does **not** share
+  Edit the README's examples and that file together. It also holds shape 2a, the whole site
+  behind a browser Basic-auth prompt, run against `DocsBasicAuthenticationHandler.cs` — the
+  README's handler copied verbatim, so change the two together as well.
+  `ReDocGatedDocumentTests` is the mechanism under those shapes: which endpoints carry the policy,
+  the site-wide spec implication, and the four ways gating refuses rather than half-working. It does **not** share
   `tests/Conformance`: those assertions are all `ReDocOptions`, `ConfigObject.AdditionalItems`,
   `HeadContent` and `IndexStream`, four concepts this host doesn't have. It starts a real Kestrel
   on port 0 (`ReDocTestApp`) because **endpoint routing matches nothing in a hand-built
