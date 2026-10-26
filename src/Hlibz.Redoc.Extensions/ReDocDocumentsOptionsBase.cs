@@ -8,6 +8,13 @@ namespace Hlibz.Redoc.Extensions;
 public abstract class ReDocDocumentsOptionsBase
 {
     /// <summary>
+    /// What <see cref="SpecUrlTemplate"/> starts out as. A host that can serve the specs itself
+    /// needs to tell "left alone" from "pointed somewhere", because the two answers can't both be
+    /// honoured.
+    /// </summary>
+    internal const string DefaultSpecUrlTemplate = "/openapi/{documentName}.json";
+
+    /// <summary>
     /// Route prefix the document pages are mounted under: each document without its own
     /// <see cref="ReDocDocument.Route"/> is served at <c>/{RoutePrefix}/{Name}/</c>. Defaults to
     /// <c>"api-docs"</c>.
@@ -26,7 +33,7 @@ public abstract class ReDocDocumentsOptionsBase
     /// <see cref="ReDocDocument.Name"/>. Defaults to <c>"/openapi/{documentName}.json"</c>, which
     /// matches <c>MapOpenApi()</c>.
     /// </summary>
-    public string SpecUrlTemplate { get; set; } = "/openapi/{documentName}.json";
+    public string SpecUrlTemplate { get; set; } = DefaultSpecUrlTemplate;
 
     /// <summary>
     /// Whether to check at startup that every <see cref="ReDocDocument.Name"/> matches a

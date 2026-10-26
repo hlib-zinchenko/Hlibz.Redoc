@@ -87,6 +87,15 @@ public static class ReDocDocumentsBuilderExtensions
                     context => ReDocAssets.Write(context, picker, "text/javascript")));
             }
 
+            // In this document's own group, which is the whole point: one ForDocument(...)
+            // .RequireAuthorization() then covers the page and the document it renders.
+            if (current.Spec is { } spec)
+            {
+                own.Add(endpoints.MapGet(
+                    $"{route}/{ReDocPage.SpecFileName}",
+                    context => ReDocAssets.WriteSpec(context, spec)));
+            }
+
             if (current.ToolbarScript is { } toolbar)
             {
                 own.Add(endpoints.MapGet(

@@ -25,7 +25,10 @@ WebApplication app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
 
-app.MapOpenApi();
+// No MapOpenApi() on purpose: with ServeSpecs below, each page serves its own document from its
+// own route, so the only way to the internal spec is through the policy that guards its page.
+// Mapping it as well would reopen /openapi/internal.json to anyone, which is the hole this sample
+// exists to show closed.
 ReDocDocumentsConventionBuilder docs = app.MapReDocDocuments(
     [
         // Grouped so the picker shows an <optgroup>: the catalogue on its own, the two
@@ -42,7 +45,13 @@ ReDocDocumentsConventionBuilder docs = app.MapReDocDocuments(
     options =>
     {
         options.RoutePrefix = "api-docs";
-        options.Links.Add(new ReDocLink("Widgets OpenAPI JSON", "~/openapi/widgets.json"));
+
+        // Each page serves its own document at openapi.json beside it, so the spec is one of that
+        // document's endpoints and the policy below reaches it. Nothing else needs mapping: the
+        // document comes from the provider AddOpenApi registers, not from MapOpenApi's endpoint.
+        options.ServeSpecs = true;
+        options.Links.Add(
+            new ReDocLink("Widgets OpenAPI JSON", "~/api-docs/widgets/openapi.json"));
         options.DefaultColorMode = ReDocColorMode.System;
         options.Favicon = "/favicon.svg";
 
@@ -55,7 +64,8 @@ ReDocDocumentsConventionBuilder docs = app.MapReDocDocuments(
         // Left at their defaults on purpose: EnableTelemetry (calls a third party),
         // HideDownloadButton, PrintStyles = false, RedirectToFirstDocument = false and
         // ValidateDocumentNames = false each switch something off, and SpecUrlTemplate / SpecUrl
-        // would be no-ops against MapOpenApi().
+        // are what ServeSpecs replaces — setting the template as well throws, since the two can't
+        // both decide where a page reads its spec from.
 
         // The pages are served under a real policy, so the sample proves it rather than the
         // README claiming it. 'unsafe-inline' is in style-src because ReDoc renders through
@@ -93,8 +103,10 @@ ReDocDocumentsConventionBuilder docs = app.MapReDocDocuments(
         options.AddToolbarItem("Sign in (internal docs)", "~/sign-in");
     });
 
-// The policy goes on that document's own endpoints, and not on the shared ReDoc bundle: gating
-// the bundle would blank every other page.
+// One call, and the internal document is private: the policy goes on that document's own
+// endpoints — its page, its scripts and its spec — and not on the shared ReDoc bundle, which is
+// ReDoc's own JavaScript and would blank every other page if it were gated. Anonymous requests to
+// /api-docs/internal/v1/ and to its openapi.json both end up at /sign-in.
 docs.ForDocument("internal").RequireAuthorization("Employees");
 
 // Signs in a made-up employee and sends them back to where they were headed. Only a local path is

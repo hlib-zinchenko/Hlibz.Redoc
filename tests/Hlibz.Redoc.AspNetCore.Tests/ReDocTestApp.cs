@@ -37,7 +37,8 @@ internal sealed class ReDocTestApp : IAsyncDisposable
         Action<ReDocDocumentsOptions>? configure = null,
         string pathBase = "",
         Action<WebApplicationBuilder>? configureServices = null,
-        Action<WebApplication>? configureApp = null)
+        Action<WebApplication>? configureApp = null,
+        Action<ReDocDocumentsConventionBuilder>? configureEndpoints = null)
     {
         WebApplicationBuilder builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
@@ -52,7 +53,13 @@ internal sealed class ReDocTestApp : IAsyncDisposable
         // Before the pages are mapped, which is where an app's own middleware would sit.
         configureApp?.Invoke(app);
 
-        app.MapReDocDocuments(documents ?? DefaultDocuments, configure);
+        // Mapped first, on its own line: a null-conditional short-circuits its argument, so
+        // `configureEndpoints?.Invoke(app.MapReDocDocuments(...))` maps nothing at all when no
+        // conventions are wanted — which is most of this suite.
+        ReDocDocumentsConventionBuilder mapped =
+            app.MapReDocDocuments(documents ?? DefaultDocuments, configure);
+        configureEndpoints?.Invoke(mapped);
+
         await app.StartAsync();
 
         string address = app.Services.GetRequiredService<IServer>()

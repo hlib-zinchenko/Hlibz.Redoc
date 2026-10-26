@@ -24,8 +24,8 @@ is what both existing hosts are frozen on (2.0.0 and 2.5.4). Our own host ships 
 themes itself through ~2,900 CSS custom properties and has dark mode, a color-mode toggle and system
 fonts built in — so the dark theme, the theme selector and the whole fonts feature are inert or
 redundant there, and `UseDarkTheme` is not part of its surface at all. What the host adds instead is
-everything the hosts can't do: per-page authorization through endpoint routing, a page with nothing
-inline, `immutable` cache headers, and the picker. `V2-PHASE3.md` records how that was decided and
+everything the hosts can't do: per-page authorization through endpoint routing — covering the spec
+too, via `ServeSpecs` — a page with nothing inline, `immutable` cache headers, and the picker. `V2-PHASE3.md` records how that was decided and
 what was measured; don't reintroduce the theme to the host without reading it.
 
 Lineage, and the compatibility it obliges: `Hlibz.Redoc.AspNetCore.DarkTheme` →
@@ -118,6 +118,24 @@ takes one project at a time.
     one endpoint serves the whole site, so gating it with a single document would blank every
     other page, and it is ReDoc's own JS. An unknown name throws; a `RequireAuthorization` that
     silently protects nothing is the failure worth ruling out.
+  - `ServeSpecs` is the other half of that, and the reason the authorization story is worth
+    selling at all. Gating a page while `MapOpenApi()` serves the document it renders is a locked
+    door beside an open window, and nothing here can reach that window: `MapOpenApi` and
+    `MapSwagger` map **one** endpoint for every document, so there is no per-document thing to
+    attach a policy to. With it on, each page serves its own document at `openapi.json` beside
+    itself, inside that document's endpoint group, so one `ForDocument(...).RequireAuthorization()`
+    covers the page *and* the spec — measured in `Sample.Own`, where both answer 302 to `/sign-in`
+    signed out. Generation goes through `OpenApiSpecSource`, the same
+    `Microsoft.Extensions.ApiDescriptions.IDocumentProvider` hook `OpenApiDocumentNames` already
+    resolves by name, so `MapOpenApi()` needn't be mapped at all and the output was diffed against
+    that endpoint's: identical but for the assembly-name tag and the port. Three decisions worth
+    keeping: the provider is resolved per request (an implementation may be scoped) while *which*
+    provider is settled at startup; the spec is sent `no-store`, alone among the things this
+    package serves, because a shared cache holding a gated document would hand it on; and
+    `ServeSpecs` with a non-default `SpecUrlTemplate` throws rather than silently picking one of
+    two answers about where a page reads its spec. `servers` in a generated document comes from
+    the server's own addresses rather than the request, unlike `MapOpenApi`'s — an
+    `AddDocumentTransformer` is the fix, and the README says so.
   - `assets/redoc.standalone.js.gz` is the ReDoc bundle, **checked in gzipped and served that way**.
     No Node, no `npm`, no build-time download: `assets/README.md` records the version, the npm
     tarball integrity and the upgrade steps. `gzip -n` on upgrade, or the file differs on every
@@ -296,6 +314,13 @@ takes one project at a time.
     JSON safe inside `<script>`. `DocumentTitle` is HTML-encoded (`ReDocDocumentsPlan`
     `.DocumentTitleOf`) because Redoc.AspNetCore writes it into `<title>` raw — as does every host
     so far, which is why the encoding sits in core rather than the adapter.
+  - `OpenApiSpecSource` (internal) generates one document's JSON through that same provider's
+    `GenerateAsync(string, TextWriter)`, for the host's `ServeSpecs`. Resolution is by exact
+    `(string, TextWriter)` signature, not by name — .NET 10's provider carries more than one
+    `GenerateAsync`. The provider's *own* spelling of the name is what gets passed back to it
+    (matching is case-insensitive, Swashbuckle's lookup is not), and the document is buffered
+    rather than streamed so a generator that throws half-way produces a 500 rather than a 200
+    carrying half a document.
   - `OpenApiDocumentNames` (internal) backs `ReDocDocumentsOptionsBase.ValidateDocumentNames` (on by
     default): a configured name that isn't a registered OpenAPI document throws at startup instead
     of serving a page whose spec 404s. It resolves the *internal*
@@ -335,7 +360,10 @@ takes one project at a time.
 - `samples/Sample.Own/` (:5499) — the same shared documents on our own host. Its `Program.cs` sets
   the verified Content-Security-Policy itself, so the sample proves the policy rather than the
   README asserting it, and it gates `internal` with a cookie scheme and `/sign-in` so
-  `ForDocument().RequireAuthorization()` is a running flow. It can't be line-for-line identical to the other two: there is no
+  `ForDocument().RequireAuthorization()` is a running flow. It maps **no `MapOpenApi()`**: with
+  `ServeSpecs` on that would reopen `/openapi/internal.json` to anyone, which is the hole the
+  sample exists to show closed — so don't add it back when the sample needs a spec URL for
+  something. It can't be line-for-line identical to the other two: there is no
   `UseDarkTheme` here and the mapping call is `MapReDocDocuments`.
 - `samples/Sample.RedocAspNetCore/` (:5299) and `samples/Sample.Swashbuckle/` (:5399) — the same
   app on each host, used as runnable demos and to produce the README screenshot
@@ -364,7 +392,11 @@ takes one project at a time.
     assertion. This is the permanent replacement for phase 1's throwaway "capture every string
     before and after and diff it" harness — the head content is one large string, and a lost
     newline passes every `Contains` assertion.
-- `tests/Hlibz.Redoc.AspNetCore.Tests/` — our host's own suite. It does **not** share
+- `tests/Hlibz.Redoc.AspNetCore.Tests/` — our host's own suite. `ReDocAuthorizationShapesTests`
+  holds the README's three setup examples (all public / all internal / mixed) as the status codes
+  an anonymous caller gets, including the one that still leaks — `ServeSpecs` with `MapOpenApi`
+  left open — so a reader choosing a shape is choosing on something that can't drift. Edit the
+  README's examples and that file together. It does **not** share
   `tests/Conformance`: those assertions are all `ReDocOptions`, `ConfigObject.AdditionalItems`,
   `HeadContent` and `IndexStream`, four concepts this host doesn't have. It starts a real Kestrel
   on port 0 (`ReDocTestApp`) because **endpoint routing matches nothing in a hand-built

@@ -39,6 +39,22 @@ internal static class ReDocAssets
         return Write(context, html, "text/html");
     }
 
+    /// <summary>
+    /// Serves a page's own OpenAPI document, generated for this request.
+    /// </summary>
+    /// <remarks>
+    /// <c>no-store</c>, unlike everything else here: this is the one response whose point is often
+    /// that not everyone may have it, and a shared cache holding a gated document would hand it to
+    /// the next caller. It also can't carry an ETag — the document is generated per request, as
+    /// <c>MapOpenApi</c>'s is, so there is nothing stable to tag it with.
+    /// </remarks>
+    public static async Task WriteSpec(HttpContext context, OpenApiSpecSource spec)
+    {
+        string json = await spec.GenerateAsync(context.RequestServices);
+        context.Response.Headers.CacheControl = "no-store";
+        await Write(context, json, "application/json");
+    }
+
     /// <summary>Serves one of the small generated files: the page, its CSS or its scripts.</summary>
     public static Task Write(HttpContext context, string content, string contentType)
     {

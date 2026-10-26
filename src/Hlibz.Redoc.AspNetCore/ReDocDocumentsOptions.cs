@@ -46,6 +46,38 @@ public sealed class ReDocDocumentsOptions : ReDocDocumentsOptionsBase
         + "object-src 'none'; base-uri 'none'";
 
     /// <summary>
+    /// Whether each page serves its own OpenAPI document, at <c>openapi.json</c> beside the page,
+    /// instead of reading it from wherever <see cref="ReDocDocumentsOptionsBase.SpecUrlTemplate"/>
+    /// points. Defaults to <see langword="false"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Turn this on to put a document behind a policy. The spec is then one of that document's own
+    /// endpoints, so
+    /// <c>MapReDocDocuments(...).ForDocument("internal").RequireAuthorization()</c> covers the page
+    /// <em>and</em> the document it renders. Without it, the page is gated and the spec is still
+    /// served by whoever mapped <c>MapOpenApi</c> or <c>MapSwagger</c> — one route for every
+    /// document, with nothing per-document to attach a policy to — so an anonymous request reads
+    /// the whole API surface as JSON. Hiding a spec is discretion rather than access control
+    /// either way: the endpoints it describes need their own authorization.
+    /// </para>
+    /// <para>
+    /// The document is generated through the same provider <c>dotnet getdocument</c> uses, which
+    /// both <c>AddOpenApi</c> and Swashbuckle's <c>AddSwaggerGen</c> register, so neither
+    /// <c>MapOpenApi()</c> nor <c>UseSwagger()</c> needs to be mapped at all. A document no
+    /// provider offers throws when the pages are mapped. One with an explicit
+    /// <see cref="ReDocDocument.SpecUrl"/> is left alone — it says where its spec is — and
+    /// setting <see cref="ReDocDocumentsOptionsBase.SpecUrlTemplate"/> as well throws, because
+    /// then two settings disagree about where every page reads its spec from.
+    /// </para>
+    /// <para>
+    /// A generated spec is not cached: it is built per request, like <c>MapOpenApi</c>'s, and sent
+    /// <c>no-store</c> so a shared proxy can't hand a gated document to the next caller.
+    /// </para>
+    /// </remarks>
+    public bool ServeSpecs { get; set; }
+
+    /// <summary>
     /// The color mode a first-time viewer sees. Defaults to <see cref="ReDocColorMode.System"/>.
     /// ReDoc keeps the viewer's own choice in <c>localStorage</c> and that always wins.
     /// </summary>

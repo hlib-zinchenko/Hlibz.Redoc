@@ -29,6 +29,13 @@ internal static class ReDocPage
     public const string ColorModeFileName = "redoc-colormode.js";
     public const string ToolbarFileName = "redoc-toolbar.js";
 
+    /// <summary>
+    /// Where a page serves its own spec when <see cref="ReDocDocumentsOptions.ServeSpecs"/> is on.
+    /// Beside the page rather than at a path of its own, so the href is relative like every other
+    /// one on the page and survives a path-rewriting proxy.
+    /// </summary>
+    public const string SpecFileName = "openapi.json";
+
     /// <summary>The <c>localStorage</c> key ReDoc 3 keeps the viewer's color mode under.</summary>
     private const string ColorModeKey = "redoc.colorMode";
 

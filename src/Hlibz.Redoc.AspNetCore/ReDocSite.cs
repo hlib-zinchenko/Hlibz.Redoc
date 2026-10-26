@@ -85,6 +85,20 @@ internal sealed class ReDocSite
     {
         ReDocDocumentsPlan plan = ReDocDocumentsPlan.Build(services, documents, options);
 
+        if (options.ServeSpecs
+            && !string.Equals(
+                options.SpecUrlTemplate,
+                ReDocDocumentsOptionsBase.DefaultSpecUrlTemplate,
+                StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                "ServeSpecs and SpecUrlTemplate disagree about where the pages read their specs "
+                + $"from: ServeSpecs serves each page's own at '{ReDocPage.SpecFileName}', while "
+                + $"SpecUrlTemplate points at '{options.SpecUrlTemplate}'. Leave SpecUrlTemplate "
+                + "alone, or set ReDocDocument.SpecUrl on the documents whose specs come from "
+                + "somewhere else.");
+        }
+
         string prefix = options.RoutePrefix.Trim('/');
         string bundleRoute = prefix.Length == 0
             ? $"{AssetFolder}/{ReDocBundle.FileName}"
@@ -115,6 +129,13 @@ internal sealed class ReDocSite
                 ? cssWithPicker ??= ReDocPage.Css(options, withPicker: true)
                 : cssWithout ??= ReDocPage.Css(options, withPicker: false);
 
+            // A document that says where its spec is keeps reading it from there, whoever serves
+            // it. Everything else is this page's to serve, or there is no page worth mounting.
+            OpenApiSpecSource? spec = options.ServeSpecs && page.Document.SpecUrl is null
+                ? OpenApiSpecSource.TryResolve(services, page.Document.Name)
+                    ?? throw SpecUnavailable(page)
+                : null;
+
             pages.Add(new ReDocSitePage(
                 page.Route,
                 page.Document.Name,
@@ -123,7 +144,7 @@ internal sealed class ReDocSite
                 css,
                 ReDocPage.InitScript(
                     ReDocRelativePath.Between(page.Route, bundleRoute),
-                    plan.SpecUrlOf(page.Document),
+                    spec is null ? plan.SpecUrlOf(page.Document) : ReDocPage.SpecFileName,
                     configJson),
                 colorModeScript,
                 withPicker
@@ -134,7 +155,8 @@ internal sealed class ReDocSite
                 withToolbarItems
                     ? ReDocPage.ToolbarScript(options.ToolbarItems, page.Route, itemsSpot)
                     : null,
-                page.Document.Unlisted));
+                page.Document.Unlisted,
+                spec));
         }
 
         return new ReDocSite(
@@ -146,6 +168,18 @@ internal sealed class ReDocSite
                 ? new ReDocLastDocument(pages, prefix.Length == 0 ? string.Empty : $"/{prefix}")
                 : null);
     }
+
+    /// <summary>
+    /// Why a document can't serve its own spec, named as the thing the caller has to fix. Thrown
+    /// at startup rather than left to the browser, which is where <c>ValidateDocumentNames</c>
+    /// already draws that line.
+    /// </summary>
+    private static InvalidOperationException SpecUnavailable(ReDocDocumentPage page) =>
+        new($"ServeSpecs is on, but no registered OpenAPI document provider offers a document "
+            + $"named '{page.Document.Name}', so page '/{page.Route}/' would have no spec to "
+            + "serve. Register it with AddOpenApi(\"" + page.Document.Name + "\") or Swashbuckle's "
+            + "SwaggerDoc, set ReDocDocument.SpecUrl if its spec comes from somewhere else, or "
+            + "turn ServeSpecs off and serve the specs yourself.");
 
     /// <summary>
     /// The middleware form: match a request against the site's routes by path, because without
@@ -198,6 +232,8 @@ internal sealed class ReDocSite
                     ReDocAssets.Write(context, page.PickerScript, "text/javascript"),
                 ReDocPage.ToolbarFileName when page.ToolbarScript is not null =>
                     ReDocAssets.Write(context, page.ToolbarScript, "text/javascript"),
+                ReDocPage.SpecFileName when page.Spec is not null =>
+                    ReDocAssets.WriteSpec(context, page.Spec),
                 _ => next(context),
             };
         }
@@ -216,7 +252,8 @@ internal sealed record ReDocSitePage(
     string ColorModeScript,
     string? PickerScript,
     string? ToolbarScript,
-    bool Unlisted)
+    bool Unlisted,
+    OpenApiSpecSource? Spec)
 {
     /// <summary>
     /// The last segment of the route, which is what the page's own folder is called — the target
