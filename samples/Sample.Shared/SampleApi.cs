@@ -30,6 +30,8 @@ public static class SampleApi
         AddDocument(
             services, "manufacturers", "Manufacturers API", "Companies that build widgets.");
         AddDocument(services, "facilities", "Facilities API", "Plants where widgets are made.");
+        AddDocument(
+            services, "internal", "Internal Operations API", "Staff-only views of the supply chain.");
         return services;
     }
 
@@ -110,6 +112,12 @@ public static class SampleApi
 
         app.MapGet("/facilities", () => TypedResults.Ok(manufacturers.Select(m => m.Headquarters)))
             .WithGroupName("facilities");
+
+        app.MapGet("/internal/facilities", () => TypedResults.Ok(manufacturers.Select(m => m.Headquarters)))
+            .WithGroupName("internal");
+
+        app.MapGet("/internal/manufacturers", () => TypedResults.Ok(manufacturers))
+            .WithGroupName("internal");
 
         return app;
     }

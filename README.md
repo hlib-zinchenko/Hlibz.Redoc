@@ -822,7 +822,7 @@ hosts. Installing one is the supported case.
 
 ## Running the samples locally
 
-Three samples, the same three OpenAPI documents, one per package:
+Three samples, the same four OpenAPI documents, one per package:
 
 ```bash
 dotnet run --project samples/Sample.Own               # :5499 — ReDoc 3, our own host
@@ -833,7 +833,7 @@ dotnet run --project samples/Sample.Swashbuckle       # :5399 — dark theme, Re
 Each opens `/api-docs` automatically and redirects to the first document. Run them together to
 compare: the two adapter samples have line-for-line identical `Program.cs` files, so anything that
 differs between them is a host difference. `Sample.Own` sets the strict CSP from this README itself,
-so the policy is proven by a running app.
+so the policy is proven by a running app, and gates its `internal` document with `ForDocument(...).RequireAuthorization(...)` behind a cookie sign-in (toolbar button "Sign in"). The adapter samples list the same document as `Unlisted`, which hides it and protects nothing.
 
 ## Why
 

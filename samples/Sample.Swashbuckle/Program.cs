@@ -15,8 +15,12 @@ app.MapOpenApi();
 app.UseReDocDocuments(
     [
         new ReDocDocument("widgets", "Widget Catalog"),
-        new ReDocDocument("manufacturers", "Manufacturers"),
-        new ReDocDocument("facilities", "Facilities"),
+        new ReDocDocument("manufacturers", "Manufacturers", Group: "Supply chain"),
+        new ReDocDocument("facilities", "Facilities", Group: "Supply chain"),
+
+        // Middleware carries no metadata, so nothing here can gate this page: Unlisted only hides
+        // it from the other pages' pickers. Sample.Own shows the real gate, with RequireAuthorization.
+        new ReDocDocument("internal", "Internal Operations", Route: "api-docs/internal/v1", Unlisted: true),
     ],
     docs =>
     {
@@ -32,6 +36,19 @@ app.UseReDocDocuments(
             if (document.Name == "facilities")
             {
                 theme.UseSystemFonts();
+
+                // Assigned after the call to keep its other effects (no Google request) while
+                // naming a stack of our own.
+                theme.CodeFontFamily = "ui-monospace, Menlo, monospace";
+            }
+
+            // A brand accent with explicit shades, and raw CSS after the theme's own rules.
+            if (document.Name == "manufacturers")
+            {
+                theme.PrimaryColor = "#a78bfa";
+                theme.PrimaryColorLight = "#c4b5fd";
+                theme.PrimaryColorDark = "#7c3aed";
+                theme.AdditionalCss = "h1 { letter-spacing: 0.02em; }";
             }
         });
     });

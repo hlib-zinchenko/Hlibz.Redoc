@@ -319,7 +319,7 @@ takes one project at a time.
     container *goes*: `ScriptFunctionFor(spot)` returns one creator per `ReDocToolbarSpot`, each
     identifying its container by that spot's class — which is what lets one page carry several
     strips and each script find only its own.
-- `samples/Sample.Shared/` — the three OpenAPI documents and the endpoints behind them,
+- `samples/Sample.Shared/` — the four OpenAPI documents (the fourth, `internal`, is what the samples mark `Unlisted` and `Sample.Own` gates) and the endpoints behind them,
   `AddSampleDocuments()` / `MapSampleEndpoints()`, so every sample renders the *same* spec and the
   samples can be run together and compared. Each document is registered with `AddOpenApi(name)` and
   each endpoint tagged with `.WithGroupName(name)`, because untagged endpoints land in every
@@ -334,7 +334,8 @@ takes one project at a time.
   hand.
 - `samples/Sample.Own/` (:5499) — the same shared documents on our own host. Its `Program.cs` sets
   the verified Content-Security-Policy itself, so the sample proves the policy rather than the
-  README asserting it. It can't be line-for-line identical to the other two: there is no
+  README asserting it, and it gates `internal` with a cookie scheme and `/sign-in` so
+  `ForDocument().RequireAuthorization()` is a running flow. It can't be line-for-line identical to the other two: there is no
   `UseDarkTheme` here and the mapping call is `MapReDocDocuments`.
 - `samples/Sample.RedocAspNetCore/` (:5299) and `samples/Sample.Swashbuckle/` (:5399) — the same
   app on each host, used as runnable demos and to produce the README screenshot
