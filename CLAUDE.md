@@ -396,7 +396,7 @@ takes one project at a time.
   don't add it back when the sample needs a spec URL for something. It can't be line-for-line identical to the other two: there is no
   `UseDarkTheme` here and the mapping call is `MapReDocDocuments`.
 - `samples/Sample.RedocAspNetCore/` (:5299) and `samples/Sample.Swashbuckle/` (:5399) — the same
-  app on each host, used as runnable demos and to produce the README screenshot
+  app on each host, used as runnable demos and to produce the adapter READMEs' screenshot
   (`/api-docs/widgets/`, dark via System, from the 5299 one). Their `Program.cs` files are
   line-for-line identical apart from the two `using`-level package differences: the adapters differ,
   the code a consumer writes doesn't. Both show a `~/` picker link and configure `UseSystemFonts()`

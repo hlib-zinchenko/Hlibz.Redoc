@@ -13,9 +13,9 @@ them — the definition selector Swagger UI has and ReDoc has on no version.
 [![Downloads](https://img.shields.io/nuget/dt/Hlibz.Redoc.Extensions.Core.svg?label=downloads)](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.Core)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc/blob/main/LICENSE)
 
-![Dark ReDoc UI screenshot](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc/main/docs/screenshot.png)
+![ReDoc 3 served by Hlibz.Redoc.AspNetCore, with the document picker](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc/main/docs/screenshot-aspnetcore.png)
 
-<sub>The dark theme on Redoc.AspNetCore, with the document picker top-right.</sub>
+<sub>ReDoc 3 on Hlibz.Redoc.AspNetCore, with the searchable, grouped document picker top-right.</sub>
 
 ```csharp
 app.UseReDoc(options =>
