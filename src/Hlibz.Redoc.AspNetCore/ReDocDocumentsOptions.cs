@@ -52,14 +52,17 @@ public sealed class ReDocDocumentsOptions : ReDocDocumentsOptionsBase
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Turn this on to put a document behind a policy. The spec is then one of that document's own
-    /// endpoints, so
-    /// <c>MapReDocDocuments(...).ForDocument("internal").RequireAuthorization()</c> covers the page
-    /// <em>and</em> the document it renders. Without it, the page is gated and the spec is still
-    /// served by whoever mapped <c>MapOpenApi</c> or <c>MapSwagger</c> — one route for every
-    /// document, with nothing per-document to attach a policy to — so an anonymous request reads
-    /// the whole API surface as JSON. Hiding a spec is discretion rather than access control
-    /// either way: the endpoints it describes need their own authorization.
+    /// You don't need this to gate a document.
+    /// <see cref="ReDocDocumentExtensions.RequireAuthorization"/> on the document already serves
+    /// that document's spec from inside the policy, whatever this is set to — a lock over a spec
+    /// somebody else serves would mean nothing. What this option is for is every <em>other</em>
+    /// reason to serve the specs yourself: dropping <c>MapOpenApi()</c>, keeping the specs on the
+    /// same routes as the pages so one proxy rule covers both, or putting the whole site behind one
+    /// policy with <c>MapReDocDocuments(...).RequireAuthorization()</c>.
+    /// </para>
+    /// <para>
+    /// Hiding a spec is discretion rather than access control either way: the endpoints it
+    /// describes need their own authorization.
     /// </para>
     /// <para>
     /// The document is generated through the same provider <c>dotnet getdocument</c> uses, which

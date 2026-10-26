@@ -104,7 +104,25 @@ public static class ReDocDocumentsBuilderExtensions
             }
 
             added.AddRange(own);
-            byDocument[current.Name] = new ReDocDocumentsConventionBuilder.Group(own);
+            ReDocDocumentsConventionBuilder.Group group = new(own);
+
+            // Everything this document owns, the spec included, and nothing the site shares. The
+            // empty case takes the other overload on purpose: RequireAuthorization(params string[])
+            // given no names attaches no policy at all, which is the silent non-gate worth ruling
+            // out, while RequireAuthorization() means an authenticated user.
+            if (current.Policies is { } policies)
+            {
+                if (policies.Count == 0)
+                {
+                    group.RequireAuthorization();
+                }
+                else
+                {
+                    group.RequireAuthorization([.. policies]);
+                }
+            }
+
+            byDocument[current.Name] = group;
         }
 
         added.Add(endpoints.MapGet($"/{site.BundleRoute}", ReDocAssets.WriteBundle));
@@ -144,7 +162,22 @@ public static class ReDocDocumentsBuilderExtensions
         ReDocDocumentsOptions options = new();
         configure?.Invoke(options);
 
-        ReDocSite site = ReDocSite.Build(app.ApplicationServices, documents, options);
+        // Materialized once: the sequence is walked here and again inside Build, and a lazy one
+        // could answer differently each time.
+        IReadOnlyList<ReDocDocument> docs = [.. documents];
+
+        // Middleware carries no metadata, so there is nothing here for a policy to attach to. A
+        // page that quietly came out public would be the worst of the three possible outcomes.
+        if (docs.FirstOrDefault(doc => doc is ReDocGatedDocument) is { } gated)
+        {
+            throw new InvalidOperationException(
+                $"Document '{gated.Name}' requires authorization, which UseReDocDocuments cannot "
+                + "enforce: it serves the pages as middleware, and only an endpoint carries the "
+                + "metadata a policy needs. Map the pages with MapReDocDocuments instead, which "
+                + "takes the same arguments and returns a convention builder.");
+        }
+
+        ReDocSite site = ReDocSite.Build(app.ApplicationServices, docs, options);
         return app.Use((context, next) => site.Handle(context, next));
     }
 

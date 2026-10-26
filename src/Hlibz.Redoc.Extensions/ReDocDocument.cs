@@ -36,14 +36,24 @@ namespace Hlibz.Redoc.Extensions;
 /// still list each other, and still list the rest, so someone who reaches one can navigate
 /// normally. Defaults to <see langword="false"/>.
 /// <para>
-/// This is the companion to per-document authorization: it hides the link, so a public page's
-/// dropdown doesn't advertise pages its viewer can't open. <strong>It protects nothing.</strong>
-/// The page is served to anyone who knows its URL unless something else stops them — on
-/// <c>Hlibz.Redoc.AspNetCore</c>, <c>MapReDocDocuments(...).ForDocument(name)</c> and a
-/// <c>RequireAuthorization</c> on it.
+/// <strong>It protects nothing.</strong> The page is served to anyone who knows its URL unless
+/// something else stops them — a policy, or your own middleware. What it is for is a document you
+/// still serve but would rather not advertise: a superseded version that existing links should
+/// keep reaching, or one whose pages something outside this package already gates.
+/// </para>
+/// <para>
+/// On <c>Hlibz.Redoc.AspNetCore</c>, don't reach for this to hide an internal document:
+/// <c>RequireAuthorization</c> on the document already implies it, and also protects the page and
+/// its spec. Setting it by hand there gets you the hiding without the protection.
 /// </para>
 /// </param>
-public sealed record ReDocDocument(
+/// <remarks>
+/// Not sealed, so <c>Hlibz.Redoc.AspNetCore</c> can carry per-document authorization on a record
+/// of its own without that concept reaching the hosts that cannot enforce it. Nothing in this
+/// package may copy, rebuild or compare a document as a result — a <c>with</c> expression or a
+/// reconstruction from parts would silently drop whatever a derived record adds.
+/// </remarks>
+public record ReDocDocument(
     string Name,
     string? DisplayName = null,
     string? SpecUrl = null,

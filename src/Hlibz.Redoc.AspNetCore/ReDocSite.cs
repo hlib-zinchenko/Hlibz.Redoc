@@ -85,19 +85,50 @@ internal sealed class ReDocSite
     {
         ReDocDocumentsPlan plan = ReDocDocumentsPlan.Build(services, documents, options);
 
-        if (options.ServeSpecs
-            && !string.Equals(
-                options.SpecUrlTemplate,
-                ReDocDocumentsOptionsBase.DefaultSpecUrlTemplate,
-                StringComparison.Ordinal))
+        // A gated document serves its own spec whether or not ServeSpecs is on — a policy on these
+        // endpoints can only cover a spec these endpoints serve — so it meets the same conflict.
+        ReDocDocumentPage? gatedPage =
+            plan.Pages.FirstOrDefault(page => page.Document is ReDocGatedDocument);
+
+        if (!string.Equals(
+            options.SpecUrlTemplate,
+            ReDocDocumentsOptionsBase.DefaultSpecUrlTemplate,
+            StringComparison.Ordinal))
         {
-            throw new InvalidOperationException(
-                "ServeSpecs and SpecUrlTemplate disagree about where the pages read their specs "
-                + $"from: ServeSpecs serves each page's own at '{ReDocPage.SpecFileName}', while "
-                + $"SpecUrlTemplate points at '{options.SpecUrlTemplate}'. Leave SpecUrlTemplate "
-                + "alone, or set ReDocDocument.SpecUrl on the documents whose specs come from "
-                + "somewhere else.");
+            if (options.ServeSpecs)
+            {
+                throw new InvalidOperationException(
+                    "ServeSpecs and SpecUrlTemplate disagree about where the pages read their "
+                    + $"specs from: ServeSpecs serves each page's own at "
+                    + $"'{ReDocPage.SpecFileName}', while SpecUrlTemplate points at "
+                    + $"'{options.SpecUrlTemplate}'. Leave SpecUrlTemplate alone, or set "
+                    + "ReDocDocument.SpecUrl on the documents whose specs come from somewhere "
+                    + "else.");
+            }
+
+            if (gatedPage is { } conflicting)
+            {
+                throw new InvalidOperationException(
+                    $"Document '{conflicting.Document.Name}' requires authorization, so its page "
+                    + $"serves that document itself at '{ReDocPage.SpecFileName}'. But "
+                    + $"SpecUrlTemplate points the pages at '{options.SpecUrlTemplate}', and only "
+                    + "one of those can be where a page reads its spec. Leave SpecUrlTemplate "
+                    + "alone, or drop RequireAuthorization on the document and gate it yourself "
+                    + $"with MapReDocDocuments(...).ForDocument(\"{conflicting.Document.Name}\").");
+            }
         }
+
+        // One gated document puts the whole site in "we serve the specs" mode, rather than only
+        // that document's page. A gated page has to serve its own spec for the policy to mean
+        // anything, and once it does, the other pages can't fall back on MapOpenApi either: that
+        // endpoint serves every document, the gated one included, so a site still needing it for
+        // its public pages would be a site with the lock and the open window both. Which would
+        // leave gating a document a two-call affair again, for no reason the caller could see.
+        bool serveSpecs = options.ServeSpecs || gatedPage is not null;
+        string specsBecause = options.ServeSpecs
+            ? "ServeSpecs is on"
+            : $"document '{gatedPage?.Document.Name}' requires authorization, so every page "
+                + "serves its own spec";
 
         string prefix = options.RoutePrefix.Trim('/');
         string bundleRoute = prefix.Length == 0
@@ -129,11 +160,27 @@ internal sealed class ReDocSite
                 ? cssWithPicker ??= ReDocPage.Css(options, withPicker: true)
                 : cssWithout ??= ReDocPage.Css(options, withPicker: false);
 
+            IReadOnlyList<string>? policies =
+                (page.Document as ReDocGatedDocument)?.Policies;
+
+            // A gated document pointed at a spec elsewhere would be a locked page in front of an
+            // open document, which is the one outcome this whole feature exists to rule out.
+            if (policies is not null && page.Document.SpecUrl is { } elsewhere)
+            {
+                throw new InvalidOperationException(
+                    $"Document '{page.Document.Name}' requires authorization, but its SpecUrl "
+                    + $"points at '{elsewhere}', which this package doesn't serve and a policy "
+                    + "here cannot cover — the page would be gated while the document stayed "
+                    + "open. Remove SpecUrl so the page serves the document itself, or drop "
+                    + "RequireAuthorization and gate both ends yourself with "
+                    + $"MapReDocDocuments(...).ForDocument(\"{page.Document.Name}\").");
+            }
+
             // A document that says where its spec is keeps reading it from there, whoever serves
             // it. Everything else is this page's to serve, or there is no page worth mounting.
-            OpenApiSpecSource? spec = options.ServeSpecs && page.Document.SpecUrl is null
+            OpenApiSpecSource? spec = serveSpecs && page.Document.SpecUrl is null
                 ? OpenApiSpecSource.TryResolve(services, page.Document.Name)
-                    ?? throw SpecUnavailable(page)
+                    ?? throw SpecUnavailable(page, specsBecause)
                 : null;
 
             pages.Add(new ReDocSitePage(
@@ -156,7 +203,8 @@ internal sealed class ReDocSite
                     ? ReDocPage.ToolbarScript(options.ToolbarItems, page.Route, itemsSpot)
                     : null,
                 page.Document.Unlisted,
-                spec));
+                spec,
+                policies));
         }
 
         return new ReDocSite(
@@ -174,12 +222,18 @@ internal sealed class ReDocSite
     /// at startup rather than left to the browser, which is where <c>ValidateDocumentNames</c>
     /// already draws that line.
     /// </summary>
-    private static InvalidOperationException SpecUnavailable(ReDocDocumentPage page) =>
-        new($"ServeSpecs is on, but no registered OpenAPI document provider offers a document "
-            + $"named '{page.Document.Name}', so page '/{page.Route}/' would have no spec to "
-            + "serve. Register it with AddOpenApi(\"" + page.Document.Name + "\") or Swashbuckle's "
-            + "SwaggerDoc, set ReDocDocument.SpecUrl if its spec comes from somewhere else, or "
-            + "turn ServeSpecs off and serve the specs yourself.");
+    /// <param name="page">The page that would have nothing to serve.</param>
+    /// <param name="because">
+    /// Why this page is serving its own spec at all — <c>ServeSpecs</c>, or a gated document
+    /// somewhere in the same call. Named in the message, so the caller can tell which of the two
+    /// settings to go and look at.
+    /// </param>
+    private static InvalidOperationException SpecUnavailable(
+        ReDocDocumentPage page, string because) =>
+        new($"{because}, but no registered OpenAPI document provider offers a document named "
+            + $"'{page.Document.Name}', so page '/{page.Route}/' would have no spec to serve. "
+            + $"Register it with AddOpenApi(\"{page.Document.Name}\") or Swashbuckle's SwaggerDoc, "
+            + "or set ReDocDocument.SpecUrl if its spec comes from somewhere else.");
 
     /// <summary>
     /// The middleware form: match a request against the site's routes by path, because without
@@ -253,7 +307,8 @@ internal sealed record ReDocSitePage(
     string? PickerScript,
     string? ToolbarScript,
     bool Unlisted,
-    OpenApiSpecSource? Spec)
+    OpenApiSpecSource? Spec,
+    IReadOnlyList<string>? Policies)
 {
     /// <summary>
     /// The last segment of the route, which is what the page's own folder is called — the target

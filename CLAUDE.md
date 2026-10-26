@@ -24,8 +24,9 @@ is what both existing hosts are frozen on (2.0.0 and 2.5.4). Our own host ships 
 themes itself through ~2,900 CSS custom properties and has dark mode, a color-mode toggle and system
 fonts built in — so the dark theme, the theme selector and the whole fonts feature are inert or
 redundant there, and `UseDarkTheme` is not part of its surface at all. What the host adds instead is
-everything the hosts can't do: per-page authorization through endpoint routing — covering the spec
-too, via `ServeSpecs` — a page with nothing inline, `immutable` cache headers, and the picker. `V2-PHASE3.md` records how that was decided and
+everything the hosts can't do: per-document authorization through endpoint routing — one call that
+covers the page, the spec and the link to it — a page with nothing inline, `immutable` cache
+headers, and the picker. `V2-PHASE3.md` records how that was decided and
 what was measured; don't reintroduce the theme to the host without reading it.
 
 Lineage, and the compatibility it obliges: `Hlibz.Redoc.AspNetCore.DarkTheme` →
@@ -118,14 +119,38 @@ takes one project at a time.
     one endpoint serves the whole site, so gating it with a single document would blank every
     other page, and it is ReDoc's own JS. An unknown name throws; a `RequireAuthorization` that
     silently protects nothing is the failure worth ruling out.
-  - `ServeSpecs` is the other half of that, and the reason the authorization story is worth
-    selling at all. Gating a page while `MapOpenApi()` serves the document it renders is a locked
-    door beside an open window, and nothing here can reach that window: `MapOpenApi` and
-    `MapSwagger` map **one** endpoint for every document, so there is no per-document thing to
-    attach a policy to. With it on, each page serves its own document at `openapi.json` beside
-    itself, inside that document's endpoint group, so one `ForDocument(...).RequireAuthorization()`
-    covers the page *and* the spec — measured in `Sample.Own`, where both answer 302 to `/sign-in`
-    signed out. Generation goes through `OpenApiSpecSource`, the same
+  - `ReDocDocumentExtensions.RequireAuthorization(this ReDocDocument, params string[])` is the
+    whole of per-document authorization and the reason that story is worth selling. Gating a page
+    while `MapOpenApi()` serves the document it renders is a locked door beside an open window, and
+    nothing here can reach that window: `MapOpenApi` and `MapSwagger` map **one** endpoint for
+    every document, so there is no per-document thing to attach a policy to. Said on the document,
+    one call does the three things that are only ever wanted together — policy on that document's
+    own endpoints, the page serving its own spec so the policy covers it, and the document out of
+    the other pages' pickers. Measured in `Sample.Own`: page and spec both 302 to `/sign-in` signed
+    out, both 200 signed in, and the public pages' picker JSON doesn't name it.
+    - It has to be said on the **document**, not on the returned builder, and that is the whole
+      design: `ReDocSite.Build` freezes every page's markup and mounts the spec endpoints before
+      `MapReDocDocuments` returns, so a convention applied afterwards can only reach the page.
+      `ForDocument` therefore stays for everything else endpoint routing can do, and composes.
+    - The gated record is `ReDocGatedDocument`, **internal**, deriving from core's now-unsealed
+      `ReDocDocument`; the extension returns the base type. That is what keeps authorization out
+      of the adapters by construction rather than by a runtime check — the type doesn't exist in
+      a package they reference, so their consumers cannot write it and nothing has to throw.
+      The cost: nothing anywhere may copy, rebuild or compare a `ReDocDocument`. A `with`
+      expression or a reconstruction from parts would silently drop the gating. It was verified
+      that nothing does before unsealing; keep it that way.
+    - One gated document turns spec-serving on for **every** page in the call, not just itself.
+      The public pages can't be left reading `MapOpenApi()`'s endpoint, since that one endpoint
+      serves the gated document too — so the one-call form would otherwise produce a site whose
+      public pages have no spec at all, which is the two-knob problem it exists to remove.
+    - It throws rather than half-working in four places: a gated document with its own `SpecUrl`
+      or alongside a non-default `SpecUrlTemplate` (a locked page in front of a spec we don't
+      serve), a gated name no provider offers, and any gated document handed to the
+      `UseReDocDocuments` middleware form, which carries no metadata to gate.
+  - `ServeSpecs` is the same machinery without the gating, for a site that wants to serve its own
+    specs for other reasons (dropping `MapOpenApi()`, one proxy rule, shape 2). With it on, each
+    page serves its own document at `openapi.json` beside itself, inside that document's endpoint
+    group. Generation goes through `OpenApiSpecSource`, the same
     `Microsoft.Extensions.ApiDescriptions.IDocumentProvider` hook `OpenApiDocumentNames` already
     resolves by name, so `MapOpenApi()` needn't be mapped at all and the output was diffed against
     that endpoint's: identical but for the assembly-name tag and the port. Three decisions worth
@@ -258,9 +283,14 @@ takes one project at a time.
     template entirely — resolve to the previous text at their defaults (`ReDocToolbarSpot.Shared`,
     no groups, no search), including the blank lines they'd occupy, precisely so that diff stays
     empty.
+  - `ReDocDocument` is **not sealed**, so the host can carry per-document authorization on a record
+    of its own. Nothing here may copy, rebuild or compare a document as a result — see the host's
+    `RequireAuthorization` notes above.
   - `ReDocDocument.Unlisted` keeps a document out of the picker on *listed* pages; unlisted pages
-    list everything. The rule is about the page doing the asking, never its viewer, because each
-    page is built once at startup and served to everyone as the same string —
+    list everything. On the host, gating a document already implies it, so `Unlisted` is left for
+    what it is actually for: a document you serve but would rather not advertise. The rule is about
+    the page doing the asking, never its viewer, because each page is built once at startup and
+    served to everyone as the same string —
     `ReDocDocumentsPlan.PickerPagesFrom` is where that is decided, and making it identity-aware
     would cost the whole "nothing is per-request" property `ReDocSite` is built on. It is a
     visibility flag and **not** access control; say so wherever it is documented, because a reader
@@ -360,10 +390,10 @@ takes one project at a time.
 - `samples/Sample.Own/` (:5499) — the same shared documents on our own host. Its `Program.cs` sets
   the verified Content-Security-Policy itself, so the sample proves the policy rather than the
   README asserting it, and it gates `internal` with a cookie scheme and `/sign-in` so
-  `ForDocument().RequireAuthorization()` is a running flow. It maps **no `MapOpenApi()`**: with
-  `ServeSpecs` on that would reopen `/openapi/internal.json` to anyone, which is the hole the
-  sample exists to show closed — so don't add it back when the sample needs a spec URL for
-  something. It can't be line-for-line identical to the other two: there is no
+  `new ReDocDocument(...).RequireAuthorization("Employees")` is a running flow. It sets no
+  `ServeSpecs` (the gating implies it) and maps **no `MapOpenApi()`**: that would reopen
+  `/openapi/internal.json` to anyone, which is the hole the sample exists to show closed — so
+  don't add it back when the sample needs a spec URL for something. It can't be line-for-line identical to the other two: there is no
   `UseDarkTheme` here and the mapping call is `MapReDocDocuments`.
 - `samples/Sample.RedocAspNetCore/` (:5299) and `samples/Sample.Swashbuckle/` (:5399) — the same
   app on each host, used as runnable demos and to produce the README screenshot
@@ -394,9 +424,11 @@ takes one project at a time.
     newline passes every `Contains` assertion.
 - `tests/Hlibz.Redoc.AspNetCore.Tests/` — our host's own suite. `ReDocAuthorizationShapesTests`
   holds the README's three setup examples (all public / all internal / mixed) as the status codes
-  an anonymous caller gets, including the one that still leaks — `ServeSpecs` with `MapOpenApi`
-  left open — so a reader choosing a shape is choosing on something that can't drift. Edit the
-  README's examples and that file together. It does **not** share
+  an anonymous caller gets, including the one that still leaks — a gated document with
+  `MapOpenApi` left open — so a reader choosing a shape is choosing on something that can't drift.
+  Edit the README's examples and that file together. `ReDocGatedDocumentTests` is the mechanism
+  under those shapes: which endpoints carry the policy, the site-wide spec implication, and the
+  four ways gating refuses rather than half-working. It does **not** share
   `tests/Conformance`: those assertions are all `ReDocOptions`, `ConfigObject.AdditionalItems`,
   `HeadContent` and `IndexStream`, four concepts this host doesn't have. It starts a real Kestrel
   on port 0 (`ReDocTestApp`) because **endpoint routing matches nothing in a hand-built

@@ -7,8 +7,8 @@ Four NuGet packages that do two different jobs:
 - **Serve [ReDoc](https://github.com/Redocly/redoc) 3 from your own app.**
   `Hlibz.Redoc.AspNetCore` embeds the ReDoc 3 bundle and serves its own page, so it depends on no
   other ReDoc package. Pages go behind endpoint routing, and each one can serve its own OpenAPI
-  document, so a single `.RequireAuthorization()` covers a page *and* the spec it renders. The
-  bundle is cached for a year, and nothing on the page is inline, so a strict
+  document, so `.RequireAuthorization()` on a document covers its page, the spec it renders *and*
+  the link to it. The bundle is cached for a year, and nothing on the page is inline, so a strict
   `Content-Security-Policy` needs no nonce.
 - **Add a dark theme to the ReDoc middleware you already use.** Two adapters, for
   [Swashbuckle.AspNetCore.ReDoc](https://www.nuget.org/packages/Swashbuckle.AspNetCore.ReDoc) and
@@ -75,9 +75,9 @@ app.MapReDocDocuments([new ReDocDocument("v1", "My API")]);
 ```
 
 That serves `/api-docs/v1/`, and `/api-docs` redirects to it. The spec is read from
-`/openapi/{documentName}.json`, which is where `MapOpenApi()` puts it — or set
-[`ServeSpecs`](#three-shapes) and the page serves its own, which is what lets a policy cover the
-document as well as the page.
+`/openapi/{documentName}.json`, which is where `MapOpenApi()` puts it — or a page serves its own,
+which is what lets a policy cover the document as well as the page. See
+[three shapes](#three-shapes).
 
 Several documents get a picker in the top-right corner — see
 [Multiple OpenAPI documents](#multiple-openapi-documents) below, which works the same on all three
@@ -325,11 +325,11 @@ nowhere for a policy to attach. Everything endpoints carry works here — `.Requ
 A documentation site is set up one of three ways. Pick the row you're in — only the third needs
 anything new:
 
-| | Pages | Specs | `ServeSpecs` |
+| | Pages | Specs | What you write |
 |---|---|---|---|
-| **1. All public** | open | open | off — nothing to do |
-| **2. All internal** | gated together | gated together | not needed |
-| **3. Mixed**: public API, internal document beside it | one gated | that one gated | **required** |
+| **1. All public** | open | open | nothing |
+| **2. All internal** | gated together | gated together | `.RequireAuthorization()` on the builder, and on `MapOpenApi()` |
+| **3. Mixed**: public API, internal document beside it | one gated | that one gated | `.RequireAuthorization(…)` on the document |
 
 Each example below is asserted as a test in `ReDocAuthorizationShapesTests`, as the status codes an
 anonymous caller gets, so they can't drift from what the package does.
@@ -356,23 +356,20 @@ Gating the whole builder covers the shared ReDoc bundle too, which is fine here:
 see a page can fetch it.
 
 **3. Mixed** — a public API with an internal document beside it. This is the one `MapOpenApi` can't
-express, because it has no per-document seam: gating there is every spec or none. `ServeSpecs` gives
-each page a spec of its own to gate:
+express, because it has no per-document seam: gating there is every spec or none. Say it on the
+document instead:
 
 ```csharp
 builder.Services.AddOpenApi("public");
 builder.Services.AddOpenApi("internal");
 
-// No MapOpenApi(): each page serves its own document, and the one URL that would still
+// No MapOpenApi(): every page here serves its own document, so the one URL that would
 // have leaked the internal spec is simply not mapped.
-ReDocDocumentsConventionBuilder docs = app.MapReDocDocuments(
-    [
-        new ReDocDocument("public", "Public API"),
-        new ReDocDocument("internal", "Internal API", Unlisted: true),
-    ],
-    options => options.ServeSpecs = true);
-
-docs.ForDocument("internal").RequireAuthorization("Employees");
+app.MapReDocDocuments(
+[
+    new ReDocDocument("public", "Public API"),
+    new ReDocDocument("internal", "Internal API").RequireAuthorization("Employees"),
+]);
 ```
 
 Anonymously, that serves:
@@ -385,38 +382,66 @@ GET /api-docs/internal/openapi.json     302 → /sign-in
 GET /openapi/internal.json              404   (not mapped)
 ```
 
-`ForDocument` covers that document's page, stylesheet, scripts and spec, and **not** the shared
-ReDoc bundle — one endpoint serves the whole site, so gating it with a single document would stop
-every other page rendering, and it's ReDoc's own published JavaScript rather than anything of yours.
-An unknown document name throws rather than silently protecting nothing. `Unlisted` keeps the gated
-document out of the public page's picker; it hides the link and protects nothing on its own.
+**One call, because the three parts are only ever wanted together.** It puts the policy on that
+document's page, stylesheet, scripts *and* spec; it has the page serve that spec itself, since a
+policy can only cover a document this package serves; and it drops the document from the other
+pages' pickers, so a public dropdown doesn't name your internal APIs to everyone who loads it.
+
+Two consequences worth knowing:
+
+- The shared ReDoc bundle stays open. One endpoint serves it to the whole site, so gating it with a
+  single document would stop every other page rendering, and it's ReDoc's own published JavaScript
+  rather than anything of yours.
+- One gated document makes **every** page in that call serve its own spec, not just the gated one.
+  The public pages can't be left reading `MapOpenApi()`'s endpoint, because that single endpoint
+  serves the internal document too. So a site with a gated document needs no `MapOpenApi()` at all,
+  and every document in the call has to be one a registered provider offers — or carry its own
+  `SpecUrl`.
 
 If you need `/openapi/{documentName}.json` to stay mapped for a linter or a client generator, keep
 `MapOpenApi()` **and gate it** — `app.MapOpenApi().RequireAuthorization()`. The public pages still
 render, because they read their own copy. Keeping it ungated puts the internal document back on the
 open web, and nothing here detects that.
 
-### How `ServeSpecs` works, and what it asks of your app
+For anything else endpoint routing can do to one document — output caching, rate limiting, a policy
+object rather than a name, or gating a document while leaving it listed — the convention builder is
+still there and composes with the above:
 
-Without it, a policy on a page is worth little, because the page is only a renderer: the document it
-reads is what you didn't want handed out, and it sits on a guessable URL nothing here can reach.
-That's shape 3 done wrong, and it looks like this:
+```csharp
+ReDocDocumentsConventionBuilder docs = app.MapReDocDocuments(documents);
+
+docs.ForDocument("internal").CacheOutput().RequireAuthorization(policy);
+```
+
+An unknown document name throws rather than silently protecting nothing. What `ForDocument` can't
+do is the other two parts: by the time `MapReDocDocuments` has returned, the specs are mounted and
+the pickers rendered, so a policy applied there covers the page alone.
+
+### Pages serving their own specs
+
+A policy on a page alone is worth little, because the page is only a renderer: the document it reads
+is what you didn't want handed out, and it sits on a guessable URL nothing here can reach. That's
+shape 3 done wrong, and it looks like this:
 
 ```
 GET /api-docs/internal/     302 → /sign-in      ← gated
 GET /openapi/internal.json  200  5,634 bytes    ← the whole API surface, to anyone
 ```
 
-The document is generated through the same provider `dotnet getdocument` uses — the one both
+So a gated document serves its own, at `openapi.json` beside its page, where the same policy covers
+it. The document is generated through the same provider `dotnet getdocument` uses — the one both
 `AddOpenApi` and `AddSwaggerGen` register — so it doesn't go through `MapOpenApi()`, and what the
 page gets is byte-for-byte what that endpoint would have served. `samples/Sample.Own` is the shape-3
 example running, with a cookie sign-in behind it.
 
-It is off by default, so an app that doesn't want it changes nothing. Turned on, it **adds** a URL
-and takes none away — which is the part worth reading twice, because it means `ServeSpecs` alone
-doesn't make anything private. While `/openapi/internal.json` is mapped and ungated it still answers
-200, and nothing here detects that you left it that way. Deleting `MapOpenApi()` or gating it is the
-step that closes the document.
+[`ServeSpecs`](#options) turns the same thing on for a site with nothing gated. You don't need it to
+gate a document — that's implied — so it's for the other reasons to serve the specs yourself:
+dropping `MapOpenApi()`, keeping specs on the same routes as the pages so one proxy rule covers
+both, or putting a whole site behind one policy (shape 2) without a second gated endpoint.
+
+Either way this **adds** a URL and takes none away, which is the part worth reading twice: while
+`/openapi/internal.json` is mapped and ungated it still answers 200, and nothing here detects that
+you left it that way. Deleting `MapOpenApi()` or gating it is the step that closes that door.
 
 Deleting it costs you the conventional `/openapi/{documentName}.json` URL at runtime, which a linter
 in CI, a client generator, Postman or a second UI may be pointed at; those move to
@@ -434,8 +459,10 @@ Points worth knowing:
 - `servers` in the generated document comes from the addresses the server is listening on, not from
   the request — behind a reverse proxy that's the internal address. Set it explicitly with an
   `AddDocumentTransformer` if it matters; that's the fix for a proxied `MapOpenApi()` too.
-- A document with its own `SpecUrl` is left alone. Setting `SpecUrlTemplate` as well throws, since
-  the two can't both decide where a page reads its spec from.
+- A document with its own `SpecUrl` is left alone, and `SpecUrlTemplate` set as well throws, since
+  the two can't both decide where a page reads its spec from. For a *gated* document both throw
+  instead: a locked page in front of a spec this package doesn't serve is the one outcome the
+  feature exists to rule out.
 - A name no registered provider offers throws when the pages are mapped, rather than at the first
   spec request.
 
@@ -443,20 +470,28 @@ And the thing worth saying plainly: hiding a specification is discretion, not ac
 keeps your internal surface off the open web; it is not what keeps the endpoints it describes safe.
 Those need their own authorization.
 
-`Unlisted` is a separate, deliberate step, because the two are not the same thing:
+### What happens to the picker
 
-- **`RequireAuthorization` protects the page and its spec. `Unlisted` only hides the link.** An
-  unlisted document is still served to anyone who knows its URL. Use both, not one.
-- An unlisted document is left out of the picker on *listed* pages only. Unlisted pages list
-  everything, so someone who can reach one can still navigate — and if a public page ends up with
-  nowhere to go, it gets no picker at all rather than a dropdown holding only itself.
+Gating a document takes it out of the picker, so you don't reach for `Unlisted` as well. Two details
+behind that:
+
+- It is left out of the picker on *listed* pages only. Hidden pages list everything, so a viewer who
+  signs in and reaches one can still navigate — and if a public page ends up with nowhere to go, it
+  gets no picker at all rather than a dropdown holding only itself.
 - The picker can't be audience-aware, because each page is built once at startup and served as a
   fixed string to everyone. Deciding by the page asking rather than the viewer asking is what keeps
   that true; see [the CSP section](#content-security-policy) for why nothing here is per-request.
+  That is also why hiding has to be decided on the document rather than afterwards on the
+  convention builder, by which point the pages are built.
+
+`Unlisted` is still there for a document you serve but would rather not advertise — a superseded
+version that existing links should keep reaching, say, or one that something outside this package
+already gates. On this host don't use it to hide an internal document: you'd get the hiding without
+the protection.
 
 For an app that isn't using endpoint routing there's `app.UseReDocDocuments(documents, ...)`, which
-serves the same pages and takes the same options. Nothing can attach a policy to it, so `Unlisted`
-is all you get there.
+serves the same pages and takes the same options. Nothing can attach a policy to middleware, so a
+gated document throws there rather than quietly coming out public; `Unlisted` is all you get.
 
 ## The bundle, and how it's served
 
@@ -546,7 +581,7 @@ Two things worth knowing:
 
 | `ReDocDocumentsOptions` | |
 |---|---|
-| `ServeSpecs` | Each page serves its own OpenAPI document at `openapi.json` beside it, so one `RequireAuthorization` covers the page and the spec. Defaults to `false`. |
+| `ServeSpecs` | Each page serves its own OpenAPI document at `openapi.json` beside it, instead of reading `SpecUrlTemplate`. Not needed to gate a document — [that implies it](#three-shapes). Defaults to `false`. |
 | `DefaultColorMode` | What a first-time viewer sees: `System` (default), `Light` or `Dark`. |
 | `Favicon` | `href` for the page's `<link rel="icon">`. Unset, browsers ask for `/favicon.ico`. |
 | `PrimaryColor` | The accent, as any CSS color. Writes `--color-primary-base` and `--link-color-primary` under `:root`. |
@@ -835,8 +870,8 @@ app.UseReDocDocuments(
 
 Both serve `/api-docs/widgets/` and `/api-docs/manufacturers/`, with `/api-docs` redirecting to the
 first. Each document reads its spec from `/openapi/{documentName}.json`, which is where
-`MapOpenApi()` serves it — on `Hlibz.Redoc.AspNetCore`, `ServeSpecs` has each page serve its own
-instead.
+`MapOpenApi()` serves it — on `Hlibz.Redoc.AspNetCore`, a gated document or `ServeSpecs` has each
+page serve its own instead.
 
 Tag every endpoint with `.WithGroupName(...)`. By default, an endpoint without a group name appears
 in every document.
@@ -868,7 +903,7 @@ On `Hlibz.Redoc.AspNetCore` a group name is also searchable — see
 | `DisplayName` | Label in the picker and the browser tab. Defaults to `Name`. |
 | `SpecUrl` | This document's spec URL, if it isn't at `SpecUrlTemplate`. |
 | `Route` | The page's path, e.g. `"reference/v2/taxes"`. Defaults to `{RoutePrefix}/{Name}`. |
-| `Unlisted` | Keep this document out of the picker on listed documents' pages. Hides the link; protects nothing. |
+| `Unlisted` | Keep this document out of the picker on listed documents' pages. Hides the link; protects nothing. Gating a document on `Hlibz.Redoc.AspNetCore` [already implies it](#what-happens-to-the-picker). |
 | `Group` | Heading this document sits under in the picker, as an `<optgroup>`. |
 
 | `ReDocDocumentsOptions`, the members every package has | |
@@ -938,7 +973,7 @@ dotnet run --project samples/Sample.Swashbuckle       # :5399 — dark theme, Re
 Each opens `/api-docs` automatically and redirects to the first document. Run them together to
 compare: the two adapter samples have line-for-line identical `Program.cs` files, so anything that
 differs between them is a host difference. `Sample.Own` sets the strict CSP from this README itself,
-so the policy is proven by a running app, and gates its `internal` document with `ForDocument(...).RequireAuthorization(...)` behind a cookie sign-in (toolbar button "Sign in"). It maps no `MapOpenApi()` at all: with `ServeSpecs` on, each page serves its own document, so the gated page's spec is gated with it — `curl` the internal page and its `openapi.json` signed out and both answer with a redirect to `/sign-in`. The adapter samples list the same document as `Unlisted`, which hides it and protects nothing.
+so the policy is proven by a running app, and gates its `internal` document with `.RequireAuthorization("Employees")` on the document itself, behind a cookie sign-in (toolbar button "Sign in"). It maps no `MapOpenApi()` at all: a gated document has every page serve its own, so the gated page's spec is gated with it — `curl` the internal page and its `openapi.json` signed out and both answer with a redirect to `/sign-in`, and the public pages' pickers don't name it. The adapter samples list the same document as `Unlisted`, which hides it and protects nothing.
 
 ## Why
 

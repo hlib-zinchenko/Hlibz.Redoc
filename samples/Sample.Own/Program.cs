@@ -25,11 +25,11 @@ WebApplication app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
 
-// No MapOpenApi() on purpose: with ServeSpecs below, each page serves its own document from its
-// own route, so the only way to the internal spec is through the policy that guards its page.
-// Mapping it as well would reopen /openapi/internal.json to anyone, which is the hole this sample
-// exists to show closed.
-ReDocDocumentsConventionBuilder docs = app.MapReDocDocuments(
+// No MapOpenApi() on purpose: a gated document puts every page in this call in charge of its own
+// spec, so the only way to the internal one is through the policy that guards its page. Mapping it
+// as well would reopen /openapi/internal.json to anyone, which is the hole this sample exists to
+// show closed.
+app.MapReDocDocuments(
     [
         // Grouped so the picker shows an <optgroup>: the catalogue on its own, the two
         // supply-side documents together.
@@ -37,19 +37,21 @@ ReDocDocumentsConventionBuilder docs = app.MapReDocDocuments(
         new ReDocDocument("manufacturers", "Manufacturers", Group: "Supply chain"),
         new ReDocDocument("facilities", "Facilities", Group: "Supply chain"),
 
-        // Gated below. Unlisted keeps it out of the public pages' picker (it hides the link and
-        // protects nothing; the policy does that), and a nested Route shows the picker's relative
-        // hrefs holding up at a deeper path.
-        new ReDocDocument("internal", "Internal Operations", Route: "api-docs/internal/v1", Unlisted: true),
+        // One call, and this document is private: the policy goes on its page, its scripts and
+        // its spec, it serves that spec itself so the policy reaches it, and it drops out of the
+        // other pages' picker. Anonymous requests to /api-docs/internal/v1/ and to its
+        // openapi.json both end up at /sign-in. The nested Route is here for a second reason —
+        // it shows the picker's relative hrefs holding up at a deeper path.
+        new ReDocDocument("internal", "Internal Operations", Route: "api-docs/internal/v1")
+            .RequireAuthorization("Employees"),
     ],
     options =>
     {
         options.RoutePrefix = "api-docs";
 
-        // Each page serves its own document at openapi.json beside it, so the spec is one of that
-        // document's endpoints and the policy below reaches it. Nothing else needs mapping: the
-        // document comes from the provider AddOpenApi registers, not from MapOpenApi's endpoint.
-        options.ServeSpecs = true;
+        // No ServeSpecs here: the gated document above already turned it on for every page in
+        // this call, which is why this link can point at a page's own openapi.json. The documents
+        // come from the provider AddOpenApi registers, not from MapOpenApi's endpoint.
         options.Links.Add(
             new ReDocLink("Widgets OpenAPI JSON", "~/api-docs/widgets/openapi.json"));
         options.DefaultColorMode = ReDocColorMode.System;
@@ -63,9 +65,9 @@ ReDocDocumentsConventionBuilder docs = app.MapReDocDocuments(
 
         // Left at their defaults on purpose: EnableTelemetry (calls a third party),
         // HideDownloadButton, PrintStyles = false, RedirectToFirstDocument = false and
-        // ValidateDocumentNames = false each switch something off, and SpecUrlTemplate / SpecUrl
-        // are what ServeSpecs replaces — setting the template as well throws, since the two can't
-        // both decide where a page reads its spec from.
+        // ValidateDocumentNames = false each switch something off, ServeSpecs is already implied,
+        // and SpecUrlTemplate / SpecUrl are what serving the specs replaces — setting the template
+        // as well throws, since the two can't both decide where a page reads its spec from.
 
         // The pages are served under a real policy, so the sample proves it rather than the
         // README claiming it. 'unsafe-inline' is in style-src because ReDoc renders through
@@ -102,12 +104,6 @@ ReDocDocumentsConventionBuilder docs = app.MapReDocDocuments(
         // A plain GET link, so the policy needs no form-action; it is how you reach the gated page.
         options.AddToolbarItem("Sign in (internal docs)", "~/sign-in");
     });
-
-// One call, and the internal document is private: the policy goes on that document's own
-// endpoints — its page, its scripts and its spec — and not on the shared ReDoc bundle, which is
-// ReDoc's own JavaScript and would blank every other page if it were gated. Anonymous requests to
-// /api-docs/internal/v1/ and to its openapi.json both end up at /sign-in.
-docs.ForDocument("internal").RequireAuthorization("Employees");
 
 // Signs in a made-up employee and sends them back to where they were headed. Only a local path is
 // followed, so this can't be turned into an open redirect.

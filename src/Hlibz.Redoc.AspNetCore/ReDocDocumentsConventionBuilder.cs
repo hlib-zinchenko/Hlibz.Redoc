@@ -21,9 +21,11 @@ namespace Hlibz.Redoc.Extensions;
 /// the library.
 /// </para>
 /// <para>
-/// Hiding a gated document from the other pages' pickers is a separate, deliberate step:
-/// <see cref="ReDocDocument.Unlisted"/>. Authorization doesn't imply it, because the picker is
-/// built once at startup and knows nothing about who is asking.
+/// For the common case — one document internal, the rest public — prefer
+/// <see cref="ReDocDocumentExtensions.RequireAuthorization"/> on the document itself. Said there,
+/// it also covers the document's spec and hides it from the other pages' pickers, neither of which
+/// this builder can do: the spec has to be mounted and the picker rendered while the pages are
+/// being built, which is finished by the time <c>MapReDocDocuments</c> has returned this.
 /// </para>
 /// </remarks>
 public sealed class ReDocDocumentsConventionBuilder : IEndpointConventionBuilder
