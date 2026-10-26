@@ -99,7 +99,7 @@ public sealed class ReDocDocumentsOptions : ReDocDocumentsOptionsBase
     }
 
     /// <summary>
-    /// A named palette for ReDoc's dark mode. Defaults to <see cref="ReDocThemePreset.None"/>,
+    /// A named palette for ReDoc's dark mode. Defaults to <see cref="ReDocDarkThemePreset.None"/>,
     /// which leaves ReDoc's own.
     /// </summary>
     /// <remarks>
@@ -116,7 +116,7 @@ public sealed class ReDocDocumentsOptions : ReDocDocumentsOptionsBase
     /// was set for — and <see cref="AdditionalCss"/> comes after the preset and can reach the rest.
     /// </para>
     /// </remarks>
-    public ReDocThemePreset ThemePreset { get; set; } = ReDocThemePreset.None;
+    public ReDocDarkThemePreset DarkThemePreset { get; set; } = ReDocDarkThemePreset.None;
 
     /// <summary>
     /// Where the document picker sits. Defaults to <see cref="ReDocToolbarPlacement.TopRight"/>.
@@ -161,7 +161,7 @@ public sealed class ReDocDocumentsOptions : ReDocDocumentsOptionsBase
 
     /// <summary>
     /// CSS appended to the page's stylesheet, after this package's own rules — including the
-    /// accent set by <see cref="PrimaryColor"/> and anything <see cref="ThemePreset"/> paints, so
+    /// accent set by <see cref="PrimaryColor"/> and anything <see cref="DarkThemePreset"/> paints, so
     /// rules here win at equal specificity. ReDoc 3 is themed through CSS custom properties, so
     /// overriding e.g. <c>--color-primary-base</c> under <c>html.dark</c> or <c>:root</c> is how
     /// anything else is themed.

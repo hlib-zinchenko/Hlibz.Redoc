@@ -3,7 +3,7 @@ using System.Text;
 namespace Hlibz.Redoc.Extensions;
 
 /// <summary>
-/// The palettes behind <see cref="ReDocThemePreset"/>, as the CSS they are emitted as.
+/// The palettes behind <see cref="ReDocDarkThemePreset"/>, as the CSS they are emitted as.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -23,10 +23,10 @@ namespace Hlibz.Redoc.Extensions;
 /// so a plain <c>:root.dark</c> would lose on source order.
 /// </para>
 /// </remarks>
-internal static class ReDocThemePresets
+internal static class ReDocDarkThemePresets
 {
     /// <summary>
-    /// The CSS for a preset, or <see langword="null"/> for <see cref="ReDocThemePreset.None"/>.
+    /// The CSS for a preset, or <see langword="null"/> for <see cref="ReDocDarkThemePreset.None"/>.
     /// </summary>
     /// <param name="preset">The preset to render.</param>
     /// <param name="withAccent">
@@ -34,7 +34,7 @@ internal static class ReDocThemePresets
     /// of their own, which must win: theirs may be a plain <c>:root:root</c> rule, which a preset's
     /// <c>:root:root.dark</c> would otherwise outweigh in dark mode however it was ordered.
     /// </param>
-    public static string? Css(ReDocThemePreset preset, bool withAccent)
+    public static string? Css(ReDocDarkThemePreset preset, bool withAccent)
     {
         if (PaletteOf(preset) is not { } palette)
         {
@@ -63,15 +63,15 @@ internal static class ReDocThemePresets
     /// nothing to change — the accents here were picked to carry on a near-black page, and the
     /// printed copy is on white paper.
     /// </summary>
-    public static string? PrintAccent(ReDocThemePreset preset) => PaletteOf(preset)?.PrintAccent;
+    public static string? PrintAccent(ReDocDarkThemePreset preset) => PaletteOf(preset)?.PrintAccent;
 
-    private static Palette? PaletteOf(ReDocThemePreset preset) => preset switch
+    private static Palette? PaletteOf(ReDocDarkThemePreset preset) => preset switch
     {
         // This repo's own ReDoc 2 dark theme, as a ramp: zinc surfaces, a sky accent. The values
         // are the ones ReDocDarkThemeDefaults paints with — #09090b behind the page, #18181b behind
         // nested schemas, #3f3f46 on the scrollbar, #d4d4d8 and #a1a1aa on the section captions,
         // and DefaultPrimaryLight/DefaultPrimaryDark as the two accents.
-        ReDocThemePreset.Midnight => new Palette(
+        ReDocDarkThemePreset.Midnight => new Palette(
             [
                 "#050507", "#09090b", "#18181b", "#27272a", "#3f3f46", "#52525b",
                 "#71717a", "#a1a1aa", "#d4d4d8", "#e4e4e7", "#fafafa",
@@ -82,7 +82,7 @@ internal static class ReDocThemePresets
         // Nord, in its own order: nord0-3 (Polar Night) for the surfaces and borders, nord4-6
         // (Snow Storm) for the text, nord8 (Frost) as the accent and nord10 for paper. Index 1 is
         // below nord0, and indices 7-8 bridge Nord's deliberate gap between nord3 and nord4.
-        ReDocThemePreset.Nord => new Palette(
+        ReDocDarkThemePreset.Nord => new Palette(
             [
                 "#242933", "#2e3440", "#3b4252", "#434c5e", "#4c566a", "#616e88",
                 "#8e9ab3", "#c0c9d9", "#d8dee9", "#e5e9f0", "#eceff4",
@@ -93,7 +93,7 @@ internal static class ReDocThemePresets
         // GitHub's dark theme by its Primer names: canvas inset/default/subtle, border muted and
         // default, then fg subtle/muted/default, with accent.fg as the accent and the light
         // theme's accent.fg for paper.
-        ReDocThemePreset.GitHubDark => new Palette(
+        ReDocDarkThemePreset.GitHubDark => new Palette(
             [
                 "#010409", "#0d1117", "#161b22", "#21262d", "#30363d", "#484f58",
                 "#6e7681", "#8b949e", "#b1bac4", "#c9d1d9", "#e6edf3",

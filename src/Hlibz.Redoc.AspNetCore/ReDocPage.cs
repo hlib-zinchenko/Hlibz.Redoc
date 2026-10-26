@@ -312,7 +312,7 @@ internal static class ReDocPage
 
         // Before the accent, so an explicitly set PrimaryColor is the last word on the accent, and
         // before AdditionalCss for the same reason.
-        if (ReDocThemePresets.Css(options.ThemePreset, withAccent: HasPresetAccent(options))
+        if (ReDocDarkThemePresets.Css(options.DarkThemePreset, withAccent: HasPresetAccent(options))
             is { } preset)
         {
             css.Append(preset);
@@ -446,7 +446,7 @@ internal static class ReDocPage
         // Same thing for a preset's accent, which is picked for its own near-black surfaces: every
         // preset names the shade of itself that reads on paper.
         if (HasPresetAccent(options)
-            && ReDocThemePresets.PrintAccent(options.ThemePreset) is { } presetAccent)
+            && ReDocDarkThemePresets.PrintAccent(options.DarkThemePreset) is { } presetAccent)
         {
             css.Append($$"""
                   :root:root.dark {

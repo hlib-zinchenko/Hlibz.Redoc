@@ -242,7 +242,7 @@ Three palettes ship as presets, for when you want a different dark mode rather t
 accent:
 
 ```csharp
-docs.ThemePreset = ReDocThemePreset.Nord;   // or Midnight, or GitHubDark
+docs.DarkThemePreset = ReDocDarkThemePreset.Nord;   // or Midnight, or GitHubDark
 ```
 
 | | |
@@ -447,7 +447,7 @@ Two things worth knowing:
 | `Favicon` | `href` for the page's `<link rel="icon">`. Unset, browsers ask for `/favicon.ico`. |
 | `PrimaryColor` | The accent, as any CSS color. Writes `--color-primary-base` and `--link-color-primary` under `:root`. |
 | `DarkModePrimaryColor` | The accent while `html.dark` is in effect, when it should differ. Defaults to `PrimaryColor`. |
-| `ThemePreset` | A named dark palette: `None` (default), `Midnight`, `Nord` or `GitHubDark`. Dark mode only; either accent property above takes its accent over. |
+| `DarkThemePreset` | A named dark palette: `None` (default), `Midnight`, `Nord` or `GitHubDark`. Dark mode only; either accent property above takes its accent over. |
 | `SearchablePicker` | Make the picker a searchable list, filtering on display name and `Group`. Defaults to `false`. |
 | `PickerPlacement` | Where the document picker sits: `TopRight` (default), `BottomRight` or `Sidebar`. |
 | `ToolbarItemsPlacement` | The same, for the toolbar links, and set independently. Matching the picker's puts both in one strip. |

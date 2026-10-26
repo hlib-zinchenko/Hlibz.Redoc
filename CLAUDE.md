@@ -152,7 +152,7 @@ takes one project at a time.
     or AOT host has reflection-based serialization off. `AdditionalConfigJson` is the escape hatch
     for ReDoc options this package doesn't surface, validated where it's set rather than on the
     page.
-  - `ReDocThemePresets` (internal) backs `ThemePreset` — Midnight / Nord / GitHubDark, each eleven
+  - `ReDocDarkThemePresets` (internal) backs `ThemePreset` — Midnight / Nord / GitHubDark, each eleven
     `--color-warm-grey-N` values plus an accent, under `:root:root.dark`. That is a whole theme
     because of the ramp fact above, and it is **dark mode only**: all three are dark palettes.
     Setting `PrimaryColor` or `DarkModePrimaryColor` turns the preset's accent off rather than

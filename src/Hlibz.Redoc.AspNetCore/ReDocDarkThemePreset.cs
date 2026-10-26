@@ -16,7 +16,7 @@ namespace Hlibz.Redoc.Extensions;
 /// <see cref="ReDocDocumentsOptions.AdditionalCss"/> comes after it and can reach everything else.
 /// </para>
 /// </remarks>
-public enum ReDocThemePreset
+public enum ReDocDarkThemePreset
 {
     /// <summary>ReDoc's own dark palette. The default.</summary>
     None,

@@ -70,7 +70,7 @@ ReDocDocumentsConventionBuilder docs = app.MapReDocDocuments(
         // A named palette for dark mode, on top of which those two accents still win — which is
         // the rule worth seeing rather than reading: the preset paints the greys, the brand paints
         // the accent. Switch to Nord or GitHubDark to see the other two.
-        options.ThemePreset = ReDocThemePreset.Midnight;
+        options.DarkThemePreset = ReDocDarkThemePreset.Midnight;
 
         // The two controls are placed separately, and the sample splits them to show it: the
         // picker goes where navigation already is, and the link button to the other corner, clear

@@ -168,13 +168,13 @@ public class ReDocDocumentsOptionsTests
     }
 
     [Theory]
-    [InlineData(ReDocThemePreset.Midnight, "#09090b", "#7dd3fc")]
-    [InlineData(ReDocThemePreset.Nord, "#2e3440", "#88c0d0")]
-    [InlineData(ReDocThemePreset.GitHubDark, "#0d1117", "#2f81f7")]
-    public void ThemePreset_RepointsTheDarkRampAndTheAccent(
-        ReDocThemePreset preset, string background, string accent)
+    [InlineData(ReDocDarkThemePreset.Midnight, "#09090b", "#7dd3fc")]
+    [InlineData(ReDocDarkThemePreset.Nord, "#2e3440", "#88c0d0")]
+    [InlineData(ReDocDarkThemePreset.GitHubDark, "#0d1117", "#2f81f7")]
+    public void DarkThemePreset_RepointsTheDarkRampAndTheAccent(
+        ReDocDarkThemePreset preset, string background, string accent)
     {
-        ReDocDocumentsOptions options = new() { ThemePreset = preset };
+        ReDocDocumentsOptions options = new() { DarkThemePreset = preset };
 
         string css = ReDocPage.Css(options, withPicker: false);
 
@@ -187,10 +187,10 @@ public class ReDocDocumentsOptionsTests
     }
 
     [Fact]
-    public void ThemePreset_AppliesToDarkModeOnly()
+    public void DarkThemePreset_AppliesToDarkModeOnly()
     {
         string css = ReDocPage.Css(
-            new ReDocDocumentsOptions { ThemePreset = ReDocThemePreset.Nord },
+            new ReDocDocumentsOptions { DarkThemePreset = ReDocDarkThemePreset.Nord },
             withPicker: false);
         string beforePrint = css[..css.IndexOf("@media print", StringComparison.Ordinal)];
 
@@ -201,7 +201,7 @@ public class ReDocDocumentsOptionsTests
     }
 
     [Fact]
-    public void ThemePreset_None_WritesNothing()
+    public void DarkThemePreset_None_WritesNothing()
     {
         string css = ReDocPage.Css(new ReDocDocumentsOptions(), withPicker: false);
 
@@ -214,11 +214,11 @@ public class ReDocDocumentsOptionsTests
     }
 
     [Fact]
-    public void ThemePreset_KeepsItsRampButNotItsAccentWhenOneIsConfigured()
+    public void DarkThemePreset_KeepsItsRampButNotItsAccentWhenOneIsConfigured()
     {
         ReDocDocumentsOptions options = new()
         {
-            ThemePreset = ReDocThemePreset.Nord,
+            DarkThemePreset = ReDocDarkThemePreset.Nord,
             PrimaryColor = "#c026d3",
         };
 
@@ -233,10 +233,10 @@ public class ReDocDocumentsOptionsTests
     }
 
     [Fact]
-    public void ThemePreset_PrintsTheShadeOfItselfThatReadsOnPaper()
+    public void DarkThemePreset_PrintsTheShadeOfItselfThatReadsOnPaper()
     {
         string css = ReDocPage.Css(
-            new ReDocDocumentsOptions { ThemePreset = ReDocThemePreset.GitHubDark },
+            new ReDocDocumentsOptions { DarkThemePreset = ReDocDarkThemePreset.GitHubDark },
             withPicker: false);
         string print = css[css.IndexOf("@media print", StringComparison.Ordinal)..];
 
@@ -247,11 +247,11 @@ public class ReDocDocumentsOptionsTests
     }
 
     [Fact]
-    public void AdditionalCss_ComesAfterTheThemePreset_SoItWins()
+    public void AdditionalCss_ComesAfterTheDarkThemePreset_SoItWins()
     {
         ReDocDocumentsOptions options = new()
         {
-            ThemePreset = ReDocThemePreset.Midnight,
+            DarkThemePreset = ReDocDarkThemePreset.Midnight,
             AdditionalCss = ":root:root.dark { --color-warm-grey-2: rebeccapurple; }",
         };
 
