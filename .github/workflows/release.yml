@@ -32,7 +32,7 @@ jobs:
         run: dotnet build --no-restore --configuration Release
 
       - name: Test core
-        run: dotnet test --project tests/Hlibz.Redoc.Extensions.Tests --no-build --configuration Release
+        run: dotnet test --project tests/Hlibz.Redoc.Extensions.Core.Tests --no-build --configuration Release
 
       - name: Test Redoc.AspNetCore adapter
         run: dotnet test --project tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests --no-build --configuration Release
@@ -53,7 +53,7 @@ jobs:
       - name: Pack
         run: |
           for project in \
-            src/Hlibz.Redoc.Extensions \
+            src/Hlibz.Redoc.Extensions.Core \
             src/Hlibz.Redoc.Extensions.RedocAspNetCore \
             src/Hlibz.Redoc.Extensions.Swashbuckle \
             src/Hlibz.Redoc.AspNetCore

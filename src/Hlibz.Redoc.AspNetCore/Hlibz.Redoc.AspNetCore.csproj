@@ -12,7 +12,8 @@
     <PackageId>Hlibz.Redoc.AspNetCore</PackageId>
     <Authors>Hlib Zinchenko</Authors>
     <Description>ReDoc 3 for ASP.NET Core: middleware and endpoint routing that serve an embedded ReDoc 3 bundle from your own app, with a picker for multiple OpenAPI documents, per-page authorization, long-lived cache headers and a page that needs no inline script. No dependency on Redoc.AspNetCore or Swashbuckle. For adding a dark theme to one of those hosts instead, install Hlibz.Redoc.Extensions.Swashbuckle or Hlibz.Redoc.Extensions.RedocAspNetCore.</Description>
-    <PackageTags>redoc;redoc3;openapi;swagger;aspnetcore;api-docs;documentation;middleware</PackageTags>
+    <Title>ReDoc 3 host for ASP.NET Core</Title>
+    <PackageTags>redoc;redoc3;openapi;swagger;aspnetcore;api-docs;api-reference;documentation;middleware;multiple-documents;authorization;dark-mode</PackageTags>
     <PackageProjectUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions</PackageProjectUrl>
     <RepositoryUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
@@ -35,7 +36,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Hlibz.Redoc.Extensions\Hlibz.Redoc.Extensions.csproj" />
+    <ProjectReference Include="..\Hlibz.Redoc.Extensions.Core\Hlibz.Redoc.Extensions.Core.csproj" />
   </ItemGroup>
 
   <!-- The bundle is served straight out of the assembly, pre-compressed both ways so no request

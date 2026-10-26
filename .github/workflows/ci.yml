@@ -26,7 +26,7 @@ jobs:
 
       # Microsoft Testing Platform (test.runner in global.json) needs --project per suite.
       - name: Test core
-        run: dotnet test --project tests/Hlibz.Redoc.Extensions.Tests --no-build --configuration Release
+        run: dotnet test --project tests/Hlibz.Redoc.Extensions.Core.Tests --no-build --configuration Release
 
       # Both adapter suites are the same assertions from tests/Conformance compiled against a
       # different host, so a failure in one and not the other is a host difference, not a flake.
@@ -44,7 +44,7 @@ jobs:
 
       - name: Pack
         run: |
-          dotnet pack src/Hlibz.Redoc.Extensions --no-build --configuration Release --output ./artifacts
+          dotnet pack src/Hlibz.Redoc.Extensions.Core --no-build --configuration Release --output ./artifacts
           dotnet pack src/Hlibz.Redoc.Extensions.RedocAspNetCore --no-build --configuration Release --output ./artifacts
           dotnet pack src/Hlibz.Redoc.Extensions.Swashbuckle --no-build --configuration Release --output ./artifacts
           dotnet pack src/Hlibz.Redoc.AspNetCore --no-build --configuration Release --output ./artifacts
@@ -71,7 +71,7 @@ jobs:
       # "Redoc.AspNetCore" too, so a plain grep over the nuspec always matches.
       - name: Core and our host have no host dependency
         run: |
-          for id in Hlibz.Redoc.Extensions Hlibz.Redoc.AspNetCore; do
+          for id in Hlibz.Redoc.Extensions.Core Hlibz.Redoc.AspNetCore; do
             unzip -p ./artifacts/$id.[0-9]*.nupkg '*.nuspec' > package.nuspec
             echo "== $id"
             cat package.nuspec

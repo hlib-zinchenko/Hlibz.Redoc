@@ -13,7 +13,8 @@
     <PackageId>Hlibz.Redoc.Extensions.Swashbuckle</PackageId>
     <Authors>Hlib Zinchenko</Authors>
     <Description>Add-ons for Swashbuckle.AspNetCore.ReDoc's ReDoc UI middleware: a drop-in dark theme with an optional Light/System/Dark switcher and accent color customization, plus a document picker that serves multiple OpenAPI documents as ReDoc pages with a dropdown to switch between them, like Swagger UI's definition selector.</Description>
-    <PackageTags>redoc;openapi;swagger;swashbuckle;aspnetcore;dark-theme;api-docs;documentation</PackageTags>
+    <Title>ReDoc dark theme and document picker for Swashbuckle</Title>
+    <PackageTags>redoc;redoc-dark-theme;openapi;openapi-ui;swagger;swashbuckle;swashbuckle.aspnetcore;aspnetcore;dark-theme;dark-mode;api-docs;documentation;multiple-documents</PackageTags>
     <PackageProjectUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions</PackageProjectUrl>
     <RepositoryUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
@@ -36,7 +37,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Hlibz.Redoc.Extensions\Hlibz.Redoc.Extensions.csproj" />
+    <ProjectReference Include="..\Hlibz.Redoc.Extensions.Core\Hlibz.Redoc.Extensions.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

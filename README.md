@@ -10,7 +10,7 @@ Light/System/Dark switcher, and several OpenAPI documents as ReDoc pages with a 
 them — the definition selector Swagger UI has and ReDoc has on no version.
 
 [![CI](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/actions/workflows/ci.yml)
-[![Downloads](https://img.shields.io/nuget/dt/Hlibz.Redoc.Extensions.svg?label=downloads)](https://www.nuget.org/packages/Hlibz.Redoc.Extensions)
+[![Downloads](https://img.shields.io/nuget/dt/Hlibz.Redoc.Extensions.Core.svg?label=downloads)](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.Core)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/LICENSE)
 
 ![Dark ReDoc UI screenshot](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/main/docs/screenshot.png)
@@ -27,7 +27,7 @@ app.UseReDoc(options =>
 
 ## Pick a package
 
-Install **one**. Each one brings in `Hlibz.Redoc.Extensions`, the shared engine, by itself — you
+Install **one**. Each one brings in `Hlibz.Redoc.Extensions.Core`, the shared engine, by itself — you
 never reference that directly.
 
 | Your situation | Install | Docs |

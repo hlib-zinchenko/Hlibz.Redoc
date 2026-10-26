@@ -7,13 +7,13 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/Hlibz.Redoc.AspNetCore/Hlibz.Redoc.AspNetCore.csproj" />
-    <Project Path="src/Hlibz.Redoc.Extensions/Hlibz.Redoc.Extensions.csproj" />
+    <Project Path="src/Hlibz.Redoc.Extensions.Core/Hlibz.Redoc.Extensions.Core.csproj" />
     <Project Path="src/Hlibz.Redoc.Extensions.RedocAspNetCore/Hlibz.Redoc.Extensions.RedocAspNetCore.csproj" />
     <Project Path="src/Hlibz.Redoc.Extensions.Swashbuckle/Hlibz.Redoc.Extensions.Swashbuckle.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Hlibz.Redoc.AspNetCore.Tests/Hlibz.Redoc.AspNetCore.Tests.csproj" />
-    <Project Path="tests/Hlibz.Redoc.Extensions.Tests/Hlibz.Redoc.Extensions.Tests.csproj" />
+    <Project Path="tests/Hlibz.Redoc.Extensions.Core.Tests/Hlibz.Redoc.Extensions.Core.Tests.csproj" />
     <Project Path="tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests.csproj" />
     <Project Path="tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests.csproj" />
   </Folder>

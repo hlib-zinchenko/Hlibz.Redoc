@@ -8,7 +8,7 @@ Add-ons for ReDoc UI middleware: a dark theme (a CSS string plus a ReDoc theme c
 an optional Light/System/Dark theme selector, and a document picker that serves several OpenAPI
 documents as ReDoc pages with a dropdown between them.
 
-As of v2 this is **four packages**, not one. `Hlibz.Redoc.Extensions` is the host-agnostic engine;
+As of v2 this is **four packages**, not one. `Hlibz.Redoc.Extensions.Core` is the host-agnostic engine;
 `Hlibz.Redoc.Extensions.RedocAspNetCore` and `Hlibz.Redoc.Extensions.Swashbuckle` are the adapters
 that wire it to [Redoc.AspNetCore](https://www.nuget.org/packages/Redoc.AspNetCore)'s and
 [Swashbuckle.AspNetCore.ReDoc](https://www.nuget.org/packages/Swashbuckle.AspNetCore.ReDoc)'s
@@ -52,7 +52,7 @@ one adapter is the supported case; don't "fix" this by renaming types apart.
 dotnet build
 
 # Run the tests — four suites: core, the shared conformance source per adapter, then our host
-dotnet test --project tests/Hlibz.Redoc.Extensions.Tests
+dotnet test --project tests/Hlibz.Redoc.Extensions.Core.Tests
 dotnet test --project tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests
 dotnet test --project tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests
 dotnet test --project tests/Hlibz.Redoc.AspNetCore.Tests
@@ -63,7 +63,7 @@ dotnet run --project samples/Sample.Swashbuckle       # :5399
 dotnet run --project samples/Sample.Own               # :5499
 
 # Pack all four packages locally
-dotnet pack src/Hlibz.Redoc.Extensions -c Release -o ./nupkg
+dotnet pack src/Hlibz.Redoc.Extensions.Core -c Release -o ./nupkg
 dotnet pack src/Hlibz.Redoc.Extensions.RedocAspNetCore -c Release -o ./nupkg
 dotnet pack src/Hlibz.Redoc.Extensions.Swashbuckle -c Release -o ./nupkg
 dotnet pack src/Hlibz.Redoc.AspNetCore -c Release -o ./nupkg
@@ -253,7 +253,7 @@ takes one project at a time.
     order is then reading order, so the bottom-right strip inserts itself after every strip already
     at body level while the others insert first — the one case where creation order would otherwise
     decide what you see.
-- `src/Hlibz.Redoc.Extensions/` — core: everything that doesn't touch a host's `ReDocOptions`.
+- `src/Hlibz.Redoc.Extensions.Core/` — core: everything that doesn't touch a host's `ReDocOptions`.
   It keeps `FrameworkReference Microsoft.AspNetCore.App` but references no host package — ASP.NET
   is common ground to every host, so document validation, route computation and the prefix redirect
   live here instead of being duplicated per adapter. CI asserts the packed nuspec has no host
@@ -402,7 +402,7 @@ takes one project at a time.
   the code a consumer writes doesn't. Both show a `~/` picker link and configure `UseSystemFonts()`
   on the Facilities page only, so the font difference is visible by switching documents. Keeping
   them identical is what makes a host difference show up as a visible difference.
-- `tests/Hlibz.Redoc.Extensions.Tests/` — the host-free suite, on the library's own `net8.0`, with
+- `tests/Hlibz.Redoc.Extensions.Core.Tests/` — the host-free suite, on the library's own `net8.0`, with
   no host reference. It asserts on what `ReDocDarkThemeDefaults.BuildHeadContent`/`BuildConfigValue`
   produce, reached directly through `InternalsVisibleTo`, so those assertions hold for every host
   rather than only the one that happens to be wired up. Anything that is really a statement about
@@ -468,7 +468,7 @@ therefore means adding it to the release workflow's pack list *and* creating tha
 reference `owner/repo`, so a repo rename means updating all of them.
 
 All four packages ship **one version**, and that is forced rather than chosen: a `ProjectReference`
-packs as `<dependency id="Hlibz.Redoc.Extensions" version="X.Y.Z" />`, which NuGet reads as
+packs as `<dependency id="Hlibz.Redoc.Extensions.Core" version="X.Y.Z" />`, which NuGet reads as
 `>= X.Y.Z`, so an adapter published without a core of the same version fails a consumer's restore.
 Releasing one package alone would mean per-package versions, a tag prefix per package and a looser
 dependency range — don't start down that path for a one-package fix. The lockstep cost is that a
@@ -529,7 +529,7 @@ fails the build rather than publishing a package with no page.
 
 - `README.md` (root) is the GitHub face only: it picks a package, compares the three, and links to
   the per-package READMEs. It documents none of them in full.
-- `src/Hlibz.Redoc.Extensions/README.md` is a stub — that package does nothing on its own.
+- `src/Hlibz.Redoc.Extensions.Core/README.md` is a stub — that package does nothing on its own.
 - The two adapter READMEs are near-identical by design, for the same reason the adapters' code is:
   the host-specific lines are `SpecUrl` (method vs property), the embedded ReDoc version, and the
   nonce/`__webpack_nonce__` result. Keep them in sync.

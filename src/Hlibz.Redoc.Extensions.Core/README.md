@@ -1,4 +1,4 @@
-# Hlibz.Redoc.Extensions
+# Hlibz.Redoc.Extensions.Core
 
 The host-agnostic engine behind the Hlibz ReDoc extensions: the dark theme, the Light/System/Dark
 selector, the font and print stylesheets, and the multi-document picker.

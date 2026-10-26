@@ -6,7 +6,7 @@ gets the answer, and so a future change doesn't undo a decision whose reason has
 
 ## Why four packages
 
-`Hlibz.Redoc.Extensions` is the host-agnostic engine. `Hlibz.Redoc.Extensions.RedocAspNetCore` and
+`Hlibz.Redoc.Extensions.Core` is the host-agnostic engine. `Hlibz.Redoc.Extensions.RedocAspNetCore` and
 `Hlibz.Redoc.Extensions.Swashbuckle` are adapters that wire it to each host's `ReDocOptions`.
 `Hlibz.Redoc.AspNetCore` is a host of its own, embedding ReDoc 3 and owing neither of them
 anything.

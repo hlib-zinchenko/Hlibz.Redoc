@@ -19,7 +19,7 @@ Four test suites, each run on its own — test projects use Microsoft Testing Pl
 `dotnet test` needs `--project` rather than a bare directory:
 
 ```bash
-dotnet test --project tests/Hlibz.Redoc.Extensions.Tests                     # the host-free engine
+dotnet test --project tests/Hlibz.Redoc.Extensions.Core.Tests                     # the host-free engine
 dotnet test --project tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests     # conformance, host 1
 dotnet test --project tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests         # conformance, host 2
 dotnet test --project tests/Hlibz.Redoc.AspNetCore.Tests                     # the ReDoc 3 host
