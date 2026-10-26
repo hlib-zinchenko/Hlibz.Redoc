@@ -20,6 +20,8 @@ can't give you:
 [![CI](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/LICENSE)
 
+![ReDoc 3 served by Hlibz.Redoc.AspNetCore, with the document picker](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/main/docs/screenshot-aspnetcore.png)
+
 > Keeping an existing `UseReDoc` page and just want it dark? That's ReDoc 2, and it's the other half
 > of this project: [`Hlibz.Redoc.Extensions.Swashbuckle`](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.Swashbuckle)
 > or [`Hlibz.Redoc.Extensions.RedocAspNetCore`](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.RedocAspNetCore).
