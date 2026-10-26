@@ -12,7 +12,7 @@ namespace Hlibz.Redoc.Extensions;
 /// <para>
 /// Only the per-page <c>UseReDoc</c> call is host-specific, so an adapter is left with building
 /// its options, calling
-/// <see cref="Build(IApplicationBuilder, IEnumerable{ReDocDocument}, ReDocDocumentsOptionsBase)"/>,
+/// <see cref="Build(IApplicationBuilder, IEnumerable{ReDocDocument}, ReDocDocumentsOptionsBase, string)"/>,
 /// and looping <see cref="Pages"/>. Everything in here
 /// moved out of the original single-host <c>ReDocDocumentsBuilderExtensions</c> unchanged,
 /// including the exception messages and their <c>paramName</c>s, which name the public extension
@@ -51,7 +51,7 @@ internal sealed class ReDocDocumentsPlan
     /// <summary>
     /// The redirect from the route prefix to the first page, or <see langword="null"/> when none
     /// is wanted. The adapters have it registered for them by
-    /// <see cref="Build(IApplicationBuilder, IEnumerable{ReDocDocument}, ReDocDocumentsOptionsBase)"/>;
+    /// <see cref="Build(IApplicationBuilder, IEnumerable{ReDocDocument}, ReDocDocumentsOptionsBase, string)"/>;
     /// a host that owns its routing maps it itself.
     /// </summary>
     public ReDocPrefixRedirect? Redirect { get; }
@@ -60,12 +60,16 @@ internal sealed class ReDocDocumentsPlan
     /// Validates the documents, computes their routes, registers the prefix redirect when one is
     /// wanted, and checks the document names against the app's registered OpenAPI documents.
     /// </summary>
+    // `caller` is the public extension method the consumer called, and it is there for the
+    // exception messages: a reader told to fix their UseReDocDocuments call when they wrote
+    // MapReDocDocuments has to work out for themselves that the two are the same thing.
     public static ReDocDocumentsPlan Build(
         IApplicationBuilder app,
         IEnumerable<ReDocDocument> documents,
-        ReDocDocumentsOptionsBase options)
+        ReDocDocumentsOptionsBase options,
+        string caller)
     {
-        ReDocDocumentsPlan plan = Build(app.ApplicationServices, documents, options);
+        ReDocDocumentsPlan plan = Build(app.ApplicationServices, documents, options, caller);
         if (plan.Redirect is { } redirect)
         {
             UseRedirect(app, redirect);
@@ -81,7 +85,8 @@ internal sealed class ReDocDocumentsPlan
     public static ReDocDocumentsPlan Build(
         IServiceProvider services,
         IEnumerable<ReDocDocument> documents,
-        ReDocDocumentsOptionsBase options)
+        ReDocDocumentsOptionsBase options,
+        string caller)
     {
         string prefix = options.RoutePrefix.Trim('/');
         IReadOnlyList<ReDocDocument> docs = [.. documents];
@@ -101,7 +106,7 @@ internal sealed class ReDocDocumentsPlan
             : null;
 
         ReDocDocumentsPlan plan = new(pages, links, options, redirect);
-        plan.ValidateDocumentNames(services);
+        plan.ValidateDocumentNames(services, caller);
         return plan;
     }
 
@@ -221,7 +226,7 @@ internal sealed class ReDocDocumentsPlan
     /// would otherwise mount fine and the app start clean, because only the browser's spec
     /// request 404s — so the mistake would surface in ReDoc's error screen and nowhere else.
     /// </summary>
-    private void ValidateDocumentNames(IServiceProvider services)
+    private void ValidateDocumentNames(IServiceProvider services, string caller)
     {
         // Without the placeholder, names don't drive spec URLs, so there is nothing to check.
         if (!options.ValidateDocumentNames
@@ -260,7 +265,7 @@ internal sealed class ReDocDocumentsPlan
             : $"Registered documents: {names}.";
 
         throw new InvalidOperationException(
-            "UseReDocDocuments was given OpenAPI document names that aren't registered:\n"
+            $"{caller} was given OpenAPI document names that aren't registered:\n"
             + string.Join('\n', details) + '\n' + known + '\n'
             + "Fix the name, register the document with AddOpenApi(name) or Swashbuckle's "
             + "SwaggerDoc(name, ...), set ReDocDocument.SpecUrl if its spec is served from "

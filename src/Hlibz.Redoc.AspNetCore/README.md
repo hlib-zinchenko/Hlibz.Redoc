@@ -201,7 +201,7 @@ only its spec request 404s — so the app starts clean, the log says nothing, an
 when someone opens the page. The names are checked at startup instead:
 
 ```
-UseReDocDocuments was given OpenAPI document names that aren't registered:
+MapReDocDocuments was given OpenAPI document names that aren't registered:
   - 'wigets': page '/api-docs/wigets/' would load an empty spec from '/openapi/wigets.json'.
 Registered documents: 'facilities', 'manufacturers', 'widgets'.
 ```

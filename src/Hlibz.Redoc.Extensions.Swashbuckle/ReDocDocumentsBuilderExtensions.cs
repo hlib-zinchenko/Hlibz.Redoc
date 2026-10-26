@@ -28,7 +28,8 @@ public static class ReDocDocumentsBuilderExtensions
         ReDocDocumentsOptions options = new();
         configure?.Invoke(options);
 
-        ReDocDocumentsPlan plan = ReDocDocumentsPlan.Build(app, documents, options);
+        ReDocDocumentsPlan plan =
+            ReDocDocumentsPlan.Build(app, documents, options, nameof(UseReDocDocuments));
 
         foreach (ReDocDocumentPage page in plan.Pages)
         {

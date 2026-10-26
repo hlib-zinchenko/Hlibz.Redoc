@@ -38,7 +38,8 @@ public static class ReDocDocumentsBuilderExtensions
         ReDocDocumentsOptions options = new();
         configure?.Invoke(options);
 
-        ReDocSite site = ReDocSite.Build(endpoints.ServiceProvider, documents, options);
+        ReDocSite site = ReDocSite.Build(
+            endpoints.ServiceProvider, documents, options, nameof(MapReDocDocuments));
         List<IEndpointConventionBuilder> added = [];
 
         // Per document as well as in one list: the shared endpoints below belong to the site, not
@@ -177,7 +178,8 @@ public static class ReDocDocumentsBuilderExtensions
                 + "takes the same arguments and returns a convention builder.");
         }
 
-        ReDocSite site = ReDocSite.Build(app.ApplicationServices, docs, options);
+        ReDocSite site = ReDocSite.Build(
+            app.ApplicationServices, docs, options, nameof(UseReDocDocuments));
         return app.Use((context, next) => site.Handle(context, next));
     }
 

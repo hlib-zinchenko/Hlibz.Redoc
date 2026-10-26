@@ -78,12 +78,15 @@ internal sealed class ReDocSite
         return $"{context.Request.PathBase}{path}";
     }
 
+    // `caller` is the public extension method that led here — MapReDocDocuments or
+    // UseReDocDocuments — so a startup failure names the call the consumer actually wrote.
     public static ReDocSite Build(
         IServiceProvider services,
         IEnumerable<ReDocDocument> documents,
-        ReDocDocumentsOptions options)
+        ReDocDocumentsOptions options,
+        string caller)
     {
-        ReDocDocumentsPlan plan = ReDocDocumentsPlan.Build(services, documents, options);
+        ReDocDocumentsPlan plan = ReDocDocumentsPlan.Build(services, documents, options, caller);
 
         // A gated document serves its own spec whether or not ServeSpecs is on — a policy on these
         // endpoints can only cover a spec these endpoints serve — so it meets the same conflict.

@@ -315,6 +315,23 @@ public class ReDocDocumentsOptionsTests
 
         Assert.Contains("'wigets'", thrown.Message, StringComparison.Ordinal);
         Assert.Contains("'taxes'", thrown.Message, StringComparison.Ordinal);
+
+        // The check lives in core, which the adapters reach through UseReDocDocuments — so the
+        // message has to name the call this consumer actually wrote, not that one.
+        Assert.StartsWith("MapReDocDocuments was given", thrown.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UseReDocDocuments_WithAnUnregisteredDocumentName_NamesThatCall()
+    {
+        WebApplicationBuilder builder = WebApplication.CreateSlimBuilder();
+        builder.Services.AddOpenApi("taxes");
+        WebApplication app = builder.Build();
+
+        InvalidOperationException thrown = Assert.Throws<InvalidOperationException>(
+            () => app.UseReDocDocuments([new ReDocDocument("wigets")]));
+
+        Assert.StartsWith("UseReDocDocuments was given", thrown.Message, StringComparison.Ordinal);
     }
 
     [Fact]

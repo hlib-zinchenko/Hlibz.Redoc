@@ -33,6 +33,7 @@ public class OpenApiDocumentNameConformanceTests
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
             () => app.UseReDocDocuments([new ReDocDocument("wigets")]));
 
+        Assert.StartsWith("UseReDocDocuments was given", error.Message);
         Assert.Contains("'wigets'", error.Message);
         Assert.Contains("'/api-docs/wigets/'", error.Message);
         Assert.Contains("'/openapi/wigets.json'", error.Message);
