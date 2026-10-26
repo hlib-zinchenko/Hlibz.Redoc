@@ -147,6 +147,33 @@ Toolbar links are `Hlibz.Redoc.AspNetCore` only. On the adapters the toolbar rea
 through the picker's inlined script, so a single-document site — which has no picker — would have
 nowhere to put them.
 
+## Searching the picker
+
+Past a handful of documents a dropdown stops being a way to find anything. Turn the picker into a
+searchable list:
+
+```csharp
+docs.SearchablePicker = true;
+```
+
+Typing filters on a document's display name **and** its `Group`, so a group name brings up
+everything under it — `supply` finds both documents in a "Supply chain" group without either being
+named for it. Group headings stay above whatever still matches, and `Links` entries, which have no
+group, filter on their label.
+
+The keyboard owns it, because replacing a native `<select>` means replacing what one gave away for
+free: Enter or Space opens, typing filters, ↑/↓ and Home/End move, Enter follows the highlighted
+entry, Escape closes and puts focus back on the button. The list is a `listbox` with
+`aria-activedescendant`, and the entry you are on is marked `aria-selected` — distinct from where
+the keyboard is, since both are visible at once.
+
+It is **off by default**, and that is not caution: while the whole list fits on screen a native
+`<select>` is the better control, not least because a phone renders it with its own picker instead
+of a dropdown and an on-screen keyboard.
+
+Searching is `Hlibz.Redoc.AspNetCore` only. The control needs a stylesheet, and the adapters can
+only reach their page through `HeadContent`.
+
 ## Where the controls sit
 
 The document picker and the toolbar links are placed independently, and both default to the top
@@ -421,6 +448,7 @@ Two things worth knowing:
 | `PrimaryColor` | The accent, as any CSS color. Writes `--color-primary-base` and `--link-color-primary` under `:root`. |
 | `DarkModePrimaryColor` | The accent while `html.dark` is in effect, when it should differ. Defaults to `PrimaryColor`. |
 | `ThemePreset` | A named dark palette: `None` (default), `Midnight`, `Nord` or `GitHubDark`. Dark mode only; either accent property above takes its accent over. |
+| `SearchablePicker` | Make the picker a searchable list, filtering on display name and `Group`. Defaults to `false`. |
 | `PickerPlacement` | Where the document picker sits: `TopRight` (default), `BottomRight` or `Sidebar`. |
 | `ToolbarItemsPlacement` | The same, for the toolbar links, and set independently. Matching the picker's puts both in one strip. |
 | `AdditionalCss` | Appended to the page's stylesheet, after the accent and the preset. |
@@ -725,6 +753,9 @@ app.MapReDocDocuments(
 Documents keep the order you give them, and a group appears where its first member does, so grouped
 and ungrouped ones mix freely — `Overview` stays at the top of the list above. The heading is a
 label: it isn't selectable and it changes no route. This works on all three packages.
+
+On `Hlibz.Redoc.AspNetCore` a group name is also searchable — see
+[`SearchablePicker`](#searching-the-picker), where typing `payments` brings up both versions above.
 
 | `ReDocDocument` | |
 |---|---|

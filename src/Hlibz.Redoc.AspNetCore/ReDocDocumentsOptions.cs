@@ -129,6 +129,24 @@ public sealed class ReDocDocumentsOptions : ReDocDocumentsOptionsBase
     public ReDocToolbarPlacement PickerPlacement { get; set; } = ReDocToolbarPlacement.TopRight;
 
     /// <summary>
+    /// Whether the picker is a searchable list rather than a plain dropdown. Defaults to
+    /// <see langword="false"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Worth turning on past a handful of documents, and left off below that: a native
+    /// <c>&lt;select&gt;</c> is the better control when the whole list fits on screen, not least
+    /// because a phone renders it with its own picker.
+    /// </para>
+    /// <para>
+    /// Typing filters on a document's <see cref="ReDocDocument.DisplayName"/> <em>and</em> its
+    /// <see cref="ReDocDocument.Group"/>, so a group name brings up everything under it. A
+    /// <see cref="ReDocDocumentsOptionsBase.Links"/> entry has no group and filters on its label.
+    /// </para>
+    /// </remarks>
+    public bool SearchablePicker { get; set; }
+
+    /// <summary>
     /// Where the <see cref="ToolbarItems"/> links sit. Defaults to
     /// <see cref="ReDocToolbarPlacement.TopRight"/>, and it is independent of
     /// <see cref="PickerPlacement"/>.

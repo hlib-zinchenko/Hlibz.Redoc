@@ -49,6 +49,10 @@ app.MapReDocDocuments(
         docs.PickerPlacement = ReDocToolbarPlacement.Sidebar;
         docs.ToolbarItemsPlacement = ReDocToolbarPlacement.BottomRight;
 
+        // Three documents don't need search, but the sample is where it gets exercised: typing
+        // "supply" finds both documents in that group without either being named for it.
+        docs.SearchablePicker = true;
+
         // A toolbar button beside the picker, and the prefix sending you back to whichever
         // document you were last reading.
         docs.AddToolbarItem("Sample source", "https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions", newTab: true);

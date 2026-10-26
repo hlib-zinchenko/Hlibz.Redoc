@@ -149,9 +149,16 @@ internal sealed class ReDocDocumentsPlan
     /// Which control strip the picker goes into. Only a host that owns its page has the choice;
     /// the adapters take <see cref="ReDocToolbarSpot.Shared"/>.
     /// </param>
+    /// <param name="searchable">
+    /// Whether to serve the searchable picker rather than the native <c>&lt;select&gt;</c>. Host
+    /// only: it needs CSS of its own, and the adapters can only reach the page through
+    /// <c>HeadContent</c>.
+    /// </param>
     public string PickerScriptFor(
-        ReDocDocumentPage page, ReDocToolbarSpot spot = ReDocToolbarSpot.Shared) =>
-        ReDocDocumentPicker.BuildScript(PickerPagesFrom(page), links, page, spot);
+        ReDocDocumentPage page,
+        ReDocToolbarSpot spot = ReDocToolbarSpot.Shared,
+        bool searchable = false) =>
+        ReDocDocumentPicker.BuildScript(PickerPagesFrom(page), links, page, spot, searchable);
 
     private static string RouteOf(ReDocDocument doc, string prefix)
     {

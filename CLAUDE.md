@@ -160,6 +160,27 @@ takes one project at a time.
     `PrimaryColor` meant for both modes is written as, so ordering couldn't settle it. Each preset
     also carries the shade of its accent that reads on paper, which `AppendPrintCss` emits beside
     the restored light ramp. Adding a preset is a row in `PaletteOf` and an enum member.
+  - `SearchablePicker` swaps the native `<select>` for a combobox: button, filter box and
+    `role="listbox"`, filtering on a document's label **and** its group so a group name brings up
+    everything under it (a `Links` entry has no group and filters on its label). It is a whole
+    other control, so `ReDocDocumentPicker` holds a whole other template rather than placeholders
+    in the `<select>` one — the useful property being that the frozen path is impossible to change
+    from there. Off by default on purpose: a native `<select>` is better while the list fits on
+    screen, and a phone renders it with its own picker. Two things that are not preferences.
+    The popover is `position: fixed`, placed from the pill's rect in script, because ReDoc's
+    sidebar is `overflow-y: auto` and would clip an absolutely positioned list — and the sidebar is
+    where a site with enough documents to want search puts its picker; it also flips above the pill
+    when there isn't room below, which is what `BottomRight` always is. And rows go in through
+    `place` so grouping follows the `<optgroup>` rule exactly (heading where the group's first
+    member falls, later members joining it), with the keyboard's list read back out of the DOM
+    afterwards, in the order it ended up on screen.
+    - Anything in here hidden with the `hidden` attribute — the popover, the list, the empty
+      line — needs its own `[hidden] { display: none }` rule, because the attribute is backed by
+      the browser's stylesheet and the `display` these carry on a class of ours outranks it. The
+      failure is not subtle but reads as something else entirely: the popover is on screen from
+      the moment it is built, covering its own pill, so the filter box is what you click, `open`
+      never runs, and nothing it attaches — positioning, Escape, outside-click — exists.
+      It shipped that way once, caught in the sample rather than by a test.
   - `PickerPlacement` and `ToolbarItemsPlacement` (`ReDocToolbarPlacement`: `TopRight`,
     `BottomRight`, `Sidebar`) place the picker and the links **independently**. The mechanism is
     one container per spot, found by that spot's own class: matching placements resolve to the
@@ -214,10 +235,11 @@ takes one project at a time.
     adapters can only inline them through `HeadContent` while our host serves them as files. The
     adapters' output is byte-identical either way — it was diffed against the previous commit's
     served pages on both hosts, which is the standard any change in here should meet. The
-    host-only additions — `<optgroup>` groups, and `BuildScript`'s `spot`, which only chooses among
-    `ReDocToolbar.ScriptFunctionFor`'s variants — resolve to the previous text at their defaults
-    (`ReDocToolbarSpot.Shared`, no groups), including the blank lines they'd occupy, precisely so
-    that diff stays empty.
+    host-only additions — `<optgroup>` groups, `BuildScript`'s `spot`, which only chooses among
+    `ReDocToolbar.ScriptFunctionFor`'s variants, and its `searchable`, which picks a different
+    template entirely — resolve to the previous text at their defaults (`ReDocToolbarSpot.Shared`,
+    no groups, no search), including the blank lines they'd occupy, precisely so that diff stays
+    empty.
   - `ReDocDocument.Unlisted` keeps a document out of the picker on *listed* pages; unlisted pages
     list everything. The rule is about the page doing the asking, never its viewer, because each
     page is built once at startup and served to everyone as the same string —

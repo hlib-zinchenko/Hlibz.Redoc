@@ -118,7 +118,8 @@ internal static class ReDocToolbar
             position: static; flex-wrap: wrap; padding: 12px 16px 4px;
           }
           .hlibz-toolbar-in-menu .hlibz-doc-picker { order: -1; flex: 1 0 100%; }
-          .hlibz-toolbar-in-menu .hlibz-doc-picker select { width: 100%; max-width: 100%; }
+          .hlibz-toolbar-in-menu .hlibz-doc-picker select,
+          .hlibz-toolbar-in-menu .hlibz-doc-picker-button { width: 100%; max-width: 100%; }
         """;
 
     /// <summary>

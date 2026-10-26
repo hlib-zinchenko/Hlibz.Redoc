@@ -205,6 +205,108 @@ public class ReDocPagesTests
     }
 
     [Fact]
+    public async Task SearchablePicker_IsOffByDefault()
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync();
+
+        string picker = await GetAsync(app, "/api-docs/taxes/redoc-picker.js");
+        string css = await GetAsync(app, "/api-docs/taxes/redoc-page.css");
+
+        // The native control is the better one while the whole list fits on screen, and it is the
+        // one both adapters inline.
+        Assert.Contains("document.createElement('select')", picker, StringComparison.Ordinal);
+        Assert.DoesNotContain("hlibz-doc-picker-pop", picker, StringComparison.Ordinal);
+        Assert.DoesNotContain("hlibz-doc-picker-pop", css, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SearchablePicker_FiltersOnTheDisplayNameAndTheGroup()
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            [
+                new ReDocDocument("taxes", "Taxes", Group: "Billing"),
+                new ReDocDocument("locations", "Locations"),
+            ],
+            docs => docs.SearchablePicker = true);
+
+        string picker = await GetAsync(app, "/api-docs/taxes/redoc-picker.js");
+        string css = await GetAsync(app, "/api-docs/taxes/redoc-page.css");
+
+        // Both fields in one haystack, so typing a group name brings up everything under it.
+        Assert.Contains(
+            "(entry.label + ' ' + (entry.group || '')).toLowerCase().indexOf(query)",
+            picker,
+            StringComparison.Ordinal);
+        Assert.Contains("\"group\":\"Billing\"", picker, StringComparison.Ordinal);
+
+        // A different control, so a different script and its own rules.
+        Assert.Contains("hlibz-doc-picker-button", picker, StringComparison.Ordinal);
+        Assert.DoesNotContain("document.createElement('select')", picker, StringComparison.Ordinal);
+        Assert.Contains(".hlibz-doc-picker-pop {", css, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SearchablePicker_IsStillAListboxForTheKeyboard()
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            configure: docs => docs.SearchablePicker = true);
+
+        string picker = await GetAsync(app, "/api-docs/taxes/redoc-picker.js");
+
+        // Replacing a native select means owning everything it gave away for free.
+        Assert.Contains("'role', 'listbox'", picker, StringComparison.Ordinal);
+        Assert.Contains("'aria-activedescendant'", picker, StringComparison.Ordinal);
+        Assert.Contains("'aria-expanded'", picker, StringComparison.Ordinal);
+        foreach (string key in new[] { "ArrowDown", "ArrowUp", "Enter", "Escape" })
+        {
+            Assert.Contains($"event.key === '{key}'", picker, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public async Task SearchablePicker_PositionsItsListWithScriptRatherThanCss()
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            configure: docs =>
+            {
+                docs.SearchablePicker = true;
+                docs.PickerPlacement = ReDocToolbarPlacement.Sidebar;
+            });
+
+        string picker = await GetAsync(app, "/api-docs/taxes/redoc-picker.js");
+        string css = await GetAsync(app, "/api-docs/taxes/redoc-page.css");
+
+        // ReDoc's sidebar scrolls, so an absolutely positioned list inside it would be clipped by
+        // the scroll container — and the sidebar is where a site with enough documents to want
+        // search puts its picker.
+        Assert.Contains(
+            ".hlibz-doc-picker-pop {\n    position: fixed;", css, StringComparison.Ordinal);
+        Assert.Contains("picker.getBoundingClientRect()", picker, StringComparison.Ordinal);
+        Assert.Contains(
+            "window.addEventListener('scroll', position, true)",
+            picker,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SearchablePicker_StaysShutUntilItIsOpened()
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            configure: docs => docs.SearchablePicker = true);
+
+        string css = await GetAsync(app, "/api-docs/taxes/redoc-page.css");
+
+        // The script hides the popover with the hidden attribute, which is backed by a rule in the
+        // browser's own stylesheet — so the `display` a class of ours sets outranks it and the
+        // attribute means nothing without this. Left out, the popover is on screen from the moment
+        // it is built, over its own pill: you see the filter box, clicking it never runs `open`,
+        // and nothing closes it.
+        Assert.Contains(".hlibz-doc-picker-pop[hidden],", css, StringComparison.Ordinal);
+        Assert.Contains(
+            ".hlibz-doc-picker-empty[hidden] { display: none; }", css, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task PlacementsAreIndependent_SoTheTwoControlsCanSplitUp()
     {
         await using ReDocTestApp app = await ReDocTestApp.StartAsync(

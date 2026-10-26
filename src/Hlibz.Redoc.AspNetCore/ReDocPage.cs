@@ -277,6 +277,10 @@ internal static class ReDocPage
         if (withPicker)
         {
             css.Append(ReDocDocumentPicker.Css).Append('\n');
+            if (options.SearchablePicker)
+            {
+                css.Append(ReDocDocumentPicker.SearchCss).Append('\n');
+            }
         }
 
         if (withItems)

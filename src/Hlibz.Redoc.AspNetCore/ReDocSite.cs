@@ -126,7 +126,9 @@ internal sealed class ReDocSite
                     plan.SpecUrlOf(page.Document),
                     configJson),
                 colorModeScript,
-                withPicker ? plan.PickerScriptFor(page, pickerSpot) : null,
+                withPicker
+                    ? plan.PickerScriptFor(page, pickerSpot, options.SearchablePicker)
+                    : null,
                 // Per page rather than once for the site: a `~/` item resolves against the page's
                 // own route depth, the same way the picker's links do.
                 withToolbarItems
