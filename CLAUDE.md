@@ -467,6 +467,38 @@ tag that would publish it** — a new ID without one fails the push. Adding a pr
 therefore means adding it to the release workflow's pack list *and* creating that policy. Policies
 reference `owner/repo`, so a repo rename means updating all of them.
 
+All four packages ship **one version**, and that is forced rather than chosen: a `ProjectReference`
+packs as `<dependency id="Hlibz.Redoc.Extensions" version="X.Y.Z" />`, which NuGet reads as
+`>= X.Y.Z`, so an adapter published without a core of the same version fails a consumer's restore.
+Releasing one package alone would mean per-package versions, a tag prefix per package and a looser
+dependency range — don't start down that path for a one-package fix. The lockstep cost is that a
+package with no changes still gets a new number, which is what the release notes are for.
+
+### When asked to make a release
+
+A pushed tag publishes to nuget.org, and nuget.org never lets a version be republished — so the
+tag push is the point of no return and needs the user's explicit go-ahead. The steps:
+
+1. **Agree the version.** Read `git log <last tag>..HEAD` and say which part of semver the diff
+   calls for, including which of the four packages actually changed. Don't pick it silently.
+2. **Draft the notes before tagging**, from that commit range, in this shape: a line per change
+   grouped under the package it belongs to, then a `Published for lockstep` line naming the
+   packages that are unchanged and only got a new number. That line is the whole reason these notes
+   exist — without it, a bumped version with no changes looks like a mystery on nuget.org.
+3. **Tag and push** only on the user's word: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+4. **Create the GitHub Release** on that tag with the drafted notes —
+   `gh release create vX.Y.Z --title vX.Y.Z --notes-file <file>`. `gh` is authenticated here with
+   `repo` scope, so do it rather than asking. If it isn't (another machine, expired token, a
+   sandbox that blocks it), print the notes verbatim and ask the user to create the release
+   themselves — never leave a tag with no notes.
+5. **Check the run**, with `gh run list --workflow release.yml`, and say whether all four packages
+   were pushed. `--skip-duplicate` means a re-run of the same tag is safe but silent, so a green
+   job doesn't by itself prove a package is new.
+
+The GitHub Release is the only home for release notes: no `CHANGELOG.md` and no
+`PackageReleaseNotes`, so there is nothing to keep in sync. Releases are reachable from each
+package's nuget.org page through its repository link.
+
 ## Conventions
 
 - File-scoped namespaces, explicit types (no `var`), 4-space indent, LF, UTF-8 (no BOM), 100-char
@@ -485,3 +517,26 @@ reference `owner/repo`, so a repo rename means updating all of them.
   `PackageIcon` and shown at the top of README through its `raw.githubusercontent.com` URL on
   `main`, because nuget.org renders neither relative image paths nor raw HTML. So a changed
   icon shows in README only once it's pushed.
+
+## Documentation layout
+
+**Each package packs its own `src/<package>/README.md`**, not the root one. nuget.org shows one
+package's page at a time — a shared README made a Swashbuckle consumer read 400 lines about the
+other host first — and in-page anchors (`#three-shapes`) don't resolve there, so the per-package
+READMEs are self-contained and link out with absolute GitHub URLs instead. CI asserts a `README.md`
+at each package root and a matching `<readme>` element in the nuspec, so dropping the `None` item
+fails the build rather than publishing a package with no page.
+
+- `README.md` (root) is the GitHub face only: it picks a package, compares the three, and links to
+  the per-package READMEs. It documents none of them in full.
+- `src/Hlibz.Redoc.Extensions/README.md` is a stub — that package does nothing on its own.
+- The two adapter READMEs are near-identical by design, for the same reason the adapters' code is:
+  the host-specific lines are `SpecUrl` (method vs property), the embedded ReDoc version, and the
+  nonce/`__webpack_nonce__` result. Keep them in sync.
+- `docs/DESIGN.md` holds rationale — why a decision was made and what was measured. Anything in a
+  README that explains a decision rather than telling a reader what to do belongs there; that split
+  is what keeps the READMEs usable.
+- `CONTRIBUTING.md` holds the build/test/sample/release instructions. The commands in this file and
+  in there are the same set; edit both.
+- `Hlibz.Redoc.AspNetCore`'s README carries the three authorization shapes, asserted in
+  `ReDocAuthorizationShapesTests` — edit them together.

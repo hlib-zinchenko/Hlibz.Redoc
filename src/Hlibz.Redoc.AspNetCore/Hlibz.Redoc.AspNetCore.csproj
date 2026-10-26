@@ -48,7 +48,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
     <None Include="..\..\docs\icon.png" Pack="true" PackagePath="\" />
     <!-- ReDoc is MIT, and MIT wants its copyright notice carried with the copy we redistribute. -->
     <None Include="assets\redoc-LICENSE.txt" Pack="true" PackagePath="\THIRD-PARTY-NOTICES.txt" />
