@@ -1,4 +1,4 @@
-![Hlibz.Redoc.Extensions icon](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/main/docs/icon.png)
+![Hlibz.Redoc.Extensions icon](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc/main/docs/icon.png)
 
 # Hlibz.Redoc.Extensions.Swashbuckle
 
@@ -9,11 +9,11 @@ Light/System/Dark switcher, system fonts instead of a request to Google, a print
 several OpenAPI documents as ReDoc pages with a dropdown between them, the definition selector
 Swagger UI has and ReDoc has on no version.
 
-![Dark ReDoc UI screenshot](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/main/docs/screenshot.png)
+![Dark ReDoc UI screenshot](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc/main/docs/screenshot.png)
 
 [![NuGet](https://img.shields.io/nuget/v/Hlibz.Redoc.Extensions.Swashbuckle.svg)](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.Swashbuckle)
-[![CI](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/LICENSE)
+[![CI](https://github.com/hlib-zinchenko/Hlibz.Redoc/actions/workflows/ci.yml/badge.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc/blob/main/LICENSE)
 
 ## Install
 
@@ -376,4 +376,4 @@ hash router.
 MIT. ReDoc itself is MIT too, and is shipped by `Swashbuckle.AspNetCore.ReDoc`, not by this
 package.
 
-[Source, issues and the full docs on GitHub](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions)
+[Source, issues and the full docs on GitHub](https://github.com/hlib-zinchenko/Hlibz.Redoc)

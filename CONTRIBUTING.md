@@ -1,7 +1,7 @@
 # Contributing
 
 Bug reports, ideas and pull requests are welcome —
-[open an issue](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/issues) first
+[open an issue](https://github.com/hlib-zinchenko/Hlibz.Redoc/issues) first
 if the change is large, so we can agree on the shape before you write it.
 
 ## Requirements

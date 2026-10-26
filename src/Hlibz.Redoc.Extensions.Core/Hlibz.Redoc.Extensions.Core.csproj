@@ -14,8 +14,8 @@
     <Description>The host-agnostic engine behind the Hlibz ReDoc extensions: a dark theme with an optional Light/System/Dark switcher and accent color customization, font control, a print stylesheet, and a multi-document picker. This package on its own does nothing — install the adapter for your ReDoc host: Hlibz.Redoc.Extensions.RedocAspNetCore for Redoc.AspNetCore.</Description>
     <Title>Hlibz ReDoc extensions engine</Title>
     <PackageTags>redoc;openapi;swagger;aspnetcore;dark-theme;dark-mode;api-docs;documentation</PackageTags>
-    <PackageProjectUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>

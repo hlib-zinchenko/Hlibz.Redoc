@@ -14,8 +14,8 @@
     <Description>Add-ons for Redoc.AspNetCore's ReDoc UI middleware: a drop-in dark theme with an optional Light/System/Dark switcher and accent color customization, plus a document picker that serves multiple OpenAPI documents as ReDoc pages with a dropdown to switch between them, like Swagger UI's definition selector. Successor to Hlibz.Redoc.AspNetCore.Extensions.</Description>
     <Title>ReDoc dark theme and document picker for Redoc.AspNetCore</Title>
     <PackageTags>redoc;redoc-dark-theme;openapi;openapi-ui;swagger;aspnetcore;dark-theme;dark-mode;api-docs;documentation;multiple-documents</PackageTags>
-    <PackageProjectUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/hlib-zinchenko/Hlibz.Redoc</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>

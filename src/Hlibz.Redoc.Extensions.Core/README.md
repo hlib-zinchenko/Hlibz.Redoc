@@ -13,6 +13,6 @@ selector, the font and print stylesheets, and the multi-document picker.
 
 Each of those references this package itself, so you never add it by hand.
 
-[Source, issues and docs on GitHub](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions)
+[Source, issues and docs on GitHub](https://github.com/hlib-zinchenko/Hlibz.Redoc)
 
 MIT.

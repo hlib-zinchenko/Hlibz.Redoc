@@ -98,7 +98,7 @@ app.MapReDocDocuments(
 
         // A toolbar button beside the picker, and the prefix sending you back to whichever
         // document you were last reading.
-        options.AddToolbarItem("Sample source", "https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions", newTab: true);
+        options.AddToolbarItem("Sample source", "https://github.com/hlib-zinchenko/Hlibz.Redoc", newTab: true);
         options.RememberLastDocument = true;
 
         // A plain GET link, so the policy needs no form-action; it is how you reach the gated page.

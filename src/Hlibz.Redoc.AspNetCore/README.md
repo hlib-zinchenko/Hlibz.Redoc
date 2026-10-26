@@ -1,4 +1,4 @@
-![Hlibz.Redoc.AspNetCore icon](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/main/docs/icon.png)
+![Hlibz.Redoc.AspNetCore icon](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc/main/docs/icon.png)
 
 # Hlibz.Redoc.AspNetCore
 
@@ -17,10 +17,10 @@ can't give you:
 - **No third-party requests.** System fonts, and ReDoc's telemetry off by default.
 
 [![NuGet](https://img.shields.io/nuget/v/Hlibz.Redoc.AspNetCore.svg)](https://www.nuget.org/packages/Hlibz.Redoc.AspNetCore)
-[![CI](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/LICENSE)
+[![CI](https://github.com/hlib-zinchenko/Hlibz.Redoc/actions/workflows/ci.yml/badge.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc/blob/main/LICENSE)
 
-![ReDoc 3 served by Hlibz.Redoc.AspNetCore, with the document picker](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/main/docs/screenshot-aspnetcore.png)
+![ReDoc 3 served by Hlibz.Redoc.AspNetCore, with the document picker](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc/main/docs/screenshot-aspnetcore.png)
 
 > Keeping an existing `UseReDoc` page and just want it dark? That's ReDoc 2, and it's the other half
 > of this project: [`Hlibz.Redoc.Extensions.Swashbuckle`](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.Swashbuckle)
@@ -583,7 +583,7 @@ For comparison: `Redoc.AspNetCore` sends its bundle uncompressed with no `Cache-
 Swashbuckle sends `max-age=0`.
 
 No Node and no network are involved in building this package.
-[`assets/README.md`](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/src/Hlibz.Redoc.AspNetCore/assets/README.md)
+[`assets/README.md`](https://github.com/hlib-zinchenko/Hlibz.Redoc/blob/main/src/Hlibz.Redoc.AspNetCore/assets/README.md)
 records the version, the npm tarball's published SHA-512 and how to upgrade it; ReDoc's MIT licence
 is packed alongside as `THIRD-PARTY-NOTICES.txt`.
 
@@ -613,7 +613,7 @@ base-uri 'none'
 ```
 
 That is the policy the pages are actually served under in
-[`samples/Sample.Own`](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/samples/Sample.Own/Program.cs),
+[`samples/Sample.Own`](https://github.com/hlib-zinchenko/Hlibz.Redoc/blob/main/samples/Sample.Own/Program.cs),
 so a running sample proves it. Every allowance beyond `default-src 'self'` is there because a
 blocked request said so.
 
@@ -726,4 +726,4 @@ AsyncAPI and GraphQL support, and "Copy / Open in ChatGPT / Open in Claude" acti
 
 MIT — ReDoc itself is MIT too, embedded here with its notice as `THIRD-PARTY-NOTICES.txt`.
 
-[Source, issues and the full docs on GitHub](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions)
+[Source, issues and the full docs on GitHub](https://github.com/hlib-zinchenko/Hlibz.Redoc)

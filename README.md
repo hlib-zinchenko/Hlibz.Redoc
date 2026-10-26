@@ -1,4 +1,4 @@
-![Hlibz.Redoc.AspNetCore.Extensions icon](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/main/docs/icon.png)
+![Hlibz.Redoc.AspNetCore.Extensions icon](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc/main/docs/icon.png)
 
 # ReDoc for ASP.NET Core
 
@@ -9,11 +9,11 @@ Add two lines to the `UseReDoc` call you already have and you get a proper dark 
 Light/System/Dark switcher, and several OpenAPI documents as ReDoc pages with a dropdown between
 them — the definition selector Swagger UI has and ReDoc has on no version.
 
-[![CI](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/actions/workflows/ci.yml/badge.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/actions/workflows/ci.yml)
+[![CI](https://github.com/hlib-zinchenko/Hlibz.Redoc/actions/workflows/ci.yml/badge.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc/actions/workflows/ci.yml)
 [![Downloads](https://img.shields.io/nuget/dt/Hlibz.Redoc.Extensions.Core.svg?label=downloads)](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.Core)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc/blob/main/LICENSE)
 
-![Dark ReDoc UI screenshot](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/main/docs/screenshot.png)
+![Dark ReDoc UI screenshot](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc/main/docs/screenshot.png)
 
 <sub>The dark theme on Redoc.AspNetCore, with the document picker top-right.</sub>
 
@@ -32,9 +32,9 @@ never reference that directly.
 
 | Your situation | Install | Docs |
 |---|---|---|
-| On `Swashbuckle.AspNetCore.ReDoc`, want dark docs and/or a document picker | **`Hlibz.Redoc.Extensions.Swashbuckle`** | [README](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/src/Hlibz.Redoc.Extensions.Swashbuckle/README.md) |
-| On `Redoc.AspNetCore`, same | **`Hlibz.Redoc.Extensions.RedocAspNetCore`** | [README](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/src/Hlibz.Redoc.Extensions.RedocAspNetCore/README.md) |
-| Want ReDoc 3, per-document authorization, real cache headers, or a page with nothing inline | **`Hlibz.Redoc.AspNetCore`** | [README](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/src/Hlibz.Redoc.AspNetCore/README.md) |
+| On `Swashbuckle.AspNetCore.ReDoc`, want dark docs and/or a document picker | **`Hlibz.Redoc.Extensions.Swashbuckle`** | [README](https://github.com/hlib-zinchenko/Hlibz.Redoc/blob/main/src/Hlibz.Redoc.Extensions.Swashbuckle/README.md) |
+| On `Redoc.AspNetCore`, same | **`Hlibz.Redoc.Extensions.RedocAspNetCore`** | [README](https://github.com/hlib-zinchenko/Hlibz.Redoc/blob/main/src/Hlibz.Redoc.Extensions.RedocAspNetCore/README.md) |
+| Want ReDoc 3, per-document authorization, real cache headers, or a page with nothing inline | **`Hlibz.Redoc.AspNetCore`** | [README](https://github.com/hlib-zinchenko/Hlibz.Redoc/blob/main/src/Hlibz.Redoc.AspNetCore/README.md) |
 | Starting fresh, no ReDoc middleware yet | **`Hlibz.Redoc.AspNetCore`** | as above |
 | On `Hlibz.Redoc.AspNetCore.Extensions` 1.x | **`Hlibz.Redoc.Extensions.RedocAspNetCore`** | renamed, same code: a package swap, no API change |
 
@@ -108,7 +108,7 @@ was measured there, not inferred.
 
 Three runnable samples serve the same four OpenAPI documents, one per package, so you can compare
 the hosts side by side. See
-[CONTRIBUTING.md](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/CONTRIBUTING.md).
+[CONTRIBUTING.md](https://github.com/hlib-zinchenko/Hlibz.Redoc/blob/main/CONTRIBUTING.md).
 
 ## Why this exists
 
@@ -127,19 +127,19 @@ when ReDoc 3 shipped with dark mode built in, neither host moved. So the engine 
 the adapter, and `Hlibz.Redoc.AspNetCore` now serves the page itself.
 
 Design decisions and what was measured to reach them are in
-[docs/DESIGN.md](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/docs/DESIGN.md).
+[docs/DESIGN.md](https://github.com/hlib-zinchenko/Hlibz.Redoc/blob/main/docs/DESIGN.md).
 
 ## Contributing
 
 Found a bug or have an idea? Please
-[open an issue](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/issues) or a
+[open an issue](https://github.com/hlib-zinchenko/Hlibz.Redoc/issues) or a
 pull request — see
-[CONTRIBUTING.md](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/CONTRIBUTING.md)
+[CONTRIBUTING.md](https://github.com/hlib-zinchenko/Hlibz.Redoc/blob/main/CONTRIBUTING.md)
 for building, testing and running the samples. You can also reach me on
 [LinkedIn](https://www.linkedin.com/in/hzinchenko/).
 
 ## License
 
 MIT — see
-[LICENSE](https://github.com/hlib-zinchenko/Hlibz.Redoc.AspNetCore.Extensions/blob/main/LICENSE).
+[LICENSE](https://github.com/hlib-zinchenko/Hlibz.Redoc/blob/main/LICENSE).
 ReDoc itself is MIT too; `Hlibz.Redoc.AspNetCore` carries its notice as `THIRD-PARTY-NOTICES.txt`.
