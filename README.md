@@ -10,7 +10,6 @@ Light/System/Dark switcher, and several OpenAPI documents as ReDoc pages with a 
 them — the definition selector Swagger UI has and ReDoc has on no version.
 
 [![CI](https://github.com/hlib-zinchenko/Hlibz.Redoc/actions/workflows/ci.yml/badge.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc/actions/workflows/ci.yml)
-[![Downloads](https://img.shields.io/nuget/dt/Hlibz.Redoc.Extensions.Core.svg?label=downloads)](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.Core)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/hlib-zinchenko/Hlibz.Redoc/blob/main/LICENSE)
 
 ![ReDoc 3 served by Hlibz.Redoc.AspNetCore, with the document picker](https://raw.githubusercontent.com/hlib-zinchenko/Hlibz.Redoc/main/docs/screenshot-aspnetcore.png)
@@ -45,11 +44,14 @@ dotnet add package Hlibz.Redoc.AspNetCore                  # ReDoc 3, served by 
 ```
 
 [![Hlibz.Redoc.Extensions.Swashbuckle](https://img.shields.io/nuget/v/Hlibz.Redoc.Extensions.Swashbuckle?label=Hlibz.Redoc.Extensions.Swashbuckle)](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.Swashbuckle)
+[![downloads](https://img.shields.io/nuget/dt/Hlibz.Redoc.Extensions.Swashbuckle?label=downloads)](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.Swashbuckle)<br>
 [![Hlibz.Redoc.Extensions.RedocAspNetCore](https://img.shields.io/nuget/v/Hlibz.Redoc.Extensions.RedocAspNetCore?label=Hlibz.Redoc.Extensions.RedocAspNetCore)](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.RedocAspNetCore)
+[![downloads](https://img.shields.io/nuget/dt/Hlibz.Redoc.Extensions.RedocAspNetCore?label=downloads)](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.RedocAspNetCore)<br>
 [![Hlibz.Redoc.AspNetCore](https://img.shields.io/nuget/v/Hlibz.Redoc.AspNetCore?label=Hlibz.Redoc.AspNetCore)](https://www.nuget.org/packages/Hlibz.Redoc.AspNetCore)
+[![downloads](https://img.shields.io/nuget/dt/Hlibz.Redoc.AspNetCore?label=downloads)](https://www.nuget.org/packages/Hlibz.Redoc.AspNetCore)
 
 All four ship in lockstep — one version from the release tag drives every package — so those three
-numbers always match.
+versions always match.
 
 Whichever you install, the namespace is `Hlibz.Redoc.Extensions;` — one `using`, and the code you
 write doesn't change if you switch hosts later.
