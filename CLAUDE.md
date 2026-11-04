@@ -224,6 +224,28 @@ takes one project at a time.
       the moment it is built, covering its own pill, so the filter box is what you click, `open`
       never runs, and nothing it attaches — positioning, Escape, outside-click — exists.
       It shipped that way once, caught in the sample rather than by a test.
+  - `EnableTryIt()` (`ReDocTryItOptions`, `ReDocTryIt`) is the try-it console, off by default.
+    `TRY-IT.md` is the investigation behind it. The script and CSS are **real files**,
+    `assets/redoc-tryit.js` and `.css`, embedded and read once. The script is the same on every
+    page; what varies per page (spec URL, app base as `../` per route segment) travels as `data-`
+    attributes on its `<script>` tag, so nothing is inline. It is served beside each page, inside
+    that document's group, so a gated document's console is gated with it.
+    - It hangs off ReDoc 3's DOM, measured on 3.0.1: one
+      `[data-item-kind="httpItem"][data-section-id]` per operation, whose id ends
+      `/paths/{JSON pointer}/{method}` — the last `/paths/`, since the pointer escapes every `/` —
+      and a `[data-testid="page-actions"]` inside it, where the button is prepended. ReDoc renders
+      sections only near the viewport, so a `MutationObserver` keeps mounting. Batch that on a
+      **timer, not `requestAnimationFrame`**: a background tab runs no frames, and a section React
+      re-rendered there sat without its button.
+    - The console is a `<dialog>` of our own outside React's tree, reading the spec itself, never
+      ReDoc's state. Auth schemes and body media types go through two registries in the script
+      (`registerAuth`, `registerBody`); adding one is an entry, not a rewrite. They are internal
+      on purpose — no `window` API until they have settled.
+    - Credentials are in memory, or `sessionStorage` with `PersistCredentials`, never
+      `localStorage`. Everything from the spec or a response goes in through `textContent`.
+    - What the C# suite can't reach is the script's behaviour; `ReDocTryItTests` covers the
+      server half only. A change to the script wants `Sample.Own` open: send POST /widgets with
+      and without a token (401, then 201).
   - `PickerPlacement` and `ToolbarItemsPlacement` (`ReDocToolbarPlacement`: `TopRight`,
     `BottomRight`, `Sidebar`) place the picker and the links **independently**. The mechanism is
     one container per spot, found by that spot's own class: matching placements resolve to the
@@ -375,6 +397,8 @@ takes one project at a time.
     identifying its container by that spot's class — which is what lets one page carry several
     strips and each script find only its own.
 - `samples/Sample.Shared/` — the four OpenAPI documents (the fourth, `internal`, is what the samples mark `Unlisted` and `Sample.Own` gates) and the endpoints behind them,
+  with the widget catalog's POST/PUT/DELETE behind `RequireSampleToken()` (any non-empty bearer
+  token; declared as a `bearer` scheme on just those operations) so the try-it console has auth to send,
   `AddSampleDocuments()` / `MapSampleEndpoints()`, so every sample renders the *same* spec and the
   samples can be run together and compared. Each document is registered with `AddOpenApi(name)` and
   each endpoint tagged with `.WithGroupName(name)`, because untagged endpoints land in every

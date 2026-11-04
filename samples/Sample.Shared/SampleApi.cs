@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.OpenApi;
 using Sample.Shared.Models;
 
 namespace Sample.Shared;
@@ -76,6 +77,7 @@ public static class SampleApi
             return TypedResults.Created($"/widgets/{Guid.NewGuid()}", widget);
         })
             .Produces<InternalErrorResponse>(StatusCodes.Status500InternalServerError)
+            .RequireSampleToken()
             .WithGroupName("widgets");
 
         app.MapPut("/widgets/{id:guid}", Results<Ok<Widget>, NotFound<ErrorResponse>> (Guid id, Widget widget) =>
@@ -85,6 +87,7 @@ public static class SampleApi
                 : TypedResults.NotFound(new ErrorResponse("No widget matches the given id.", Guid.NewGuid().ToString()));
         })
             .Produces<InternalErrorResponse>(StatusCodes.Status500InternalServerError)
+            .RequireSampleToken()
             .WithGroupName("widgets");
 
         app.MapDelete("/widgets/{id:guid}", Results<NoContent, NotFound<ErrorResponse>> (Guid id) =>
@@ -94,6 +97,7 @@ public static class SampleApi
                 : TypedResults.NotFound(new ErrorResponse("No widget matches the given id.", Guid.NewGuid().ToString()));
         })
             .Produces<InternalErrorResponse>(StatusCodes.Status500InternalServerError)
+            .RequireSampleToken()
             .WithGroupName("widgets");
 
         IEnumerable<Manufacturer> manufacturers = Widget.Sample.Select(w => w.Manufacturer);
@@ -122,6 +126,32 @@ public static class SampleApi
         return app;
     }
 
+    /// <summary>The security scheme the widget catalog's write operations declare.</summary>
+    private const string BearerScheme = "bearer";
+
+    /// <summary>
+    /// Answers 401 unless the request carries a bearer token. Any non-empty token passes: this
+    /// sample has nothing to check one against, and the point is a protected endpoint for the
+    /// try-it console to send credentials to.
+    /// </summary>
+    private static RouteHandlerBuilder RequireSampleToken(this RouteHandlerBuilder endpoint) =>
+        endpoint
+            .AddEndpointFilter(async (context, next) =>
+            {
+                string? header = context.HttpContext.Request.Headers.Authorization;
+                if (header is null
+                    || !header.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                    || header.Length <= "Bearer ".Length)
+                {
+                    context.HttpContext.Response.Headers.WWWAuthenticate = "Bearer";
+                    return TypedResults.Unauthorized();
+                }
+
+                return await next(context);
+            })
+            .WithMetadata(new SampleTokenRequired())
+            .Produces(StatusCodes.Status401Unauthorized);
+
     // Endpoints without a group name land in every document, so each one is tagged via WithGroupName.
     private static void AddDocument(
         IServiceCollection services, string name, string title, string description)
@@ -134,6 +164,40 @@ public static class SampleApi
                 document.Info.Description = description;
                 return Task.CompletedTask;
             });
+
+            // Declared only where an endpoint actually asks for a token, so the documents without
+            // one stay free of a scheme nothing uses.
+            options.AddOperationTransformer((operation, context, _) =>
+            {
+                if (!context.Description.ActionDescriptor.EndpointMetadata
+                    .OfType<SampleTokenRequired>().Any())
+                {
+                    return Task.CompletedTask;
+                }
+
+                OpenApiDocument document = context.Document!;
+                document.Components ??= new OpenApiComponents();
+                document.Components.SecuritySchemes ??=
+                    new Dictionary<string, IOpenApiSecurityScheme>();
+                document.Components.SecuritySchemes[BearerScheme] = new OpenApiSecurityScheme
+                {
+                    Type = SecuritySchemeType.Http,
+                    Scheme = "bearer",
+                    Description = "Any non-empty token is accepted by this sample.",
+                };
+
+                operation.Security =
+                [
+                    new OpenApiSecurityRequirement
+                    {
+                        [new OpenApiSecuritySchemeReference(BearerScheme, document)] = [],
+                    },
+                ];
+                return Task.CompletedTask;
+            });
         });
     }
+
+    /// <summary>Marks an endpoint <see cref="RequireSampleToken"/> protects.</summary>
+    private sealed class SampleTokenRequired;
 }

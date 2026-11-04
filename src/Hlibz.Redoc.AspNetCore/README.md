@@ -475,6 +475,46 @@ open web; it is not what keeps the endpoints it describes safe.
 options. Nothing can attach a policy to middleware, so a gated document throws there rather than
 quietly coming out public; `Unlisted` is all you get.
 
+## Try it
+
+ReDoc's own request console is a Redocly commercial feature. This package ships a small one of its
+own, off by default:
+
+```csharp
+app.MapReDocDocuments(documents, docs => docs.EnableTryIt());
+```
+
+Every operation gets a **Try it** button beside ReDoc's Copy button. It opens a panel where you set
+the server, parameters, credentials and a JSON body pre-filled from the schema, send the request,
+and read the status, headers and body that come back.
+
+- **Auth**: bearer tokens, HTTP Basic, and API keys in a header or the query string. OAuth 2.0 and
+  OpenID Connect schemes take a pasted access token; there is no login flow yet. A token is entered
+  once per security scheme and covers every operation on the page. It stays in memory and is gone on
+  reload, unless `PersistCredentials` keeps it in `sessionStorage` for the tab. It is never written
+  to `localStorage`.
+- **Bodies**: JSON, with an example built from the schema's `example`, `default` or `enum` values
+  where it has them. Any other media type is sent as typed, with its declared `Content-Type`.
+- **Where requests go**: the spec's `servers`, or, if it declares none, the root of the app the
+  pages are served from, `PathBase` included. Requests carry the viewer's cookies for this origin
+  unless `SendCookies = false`, so an API using cookie auth works for a viewer who is already
+  signed in.
+- **Opting an operation out**: `x-hideTryItPanel: true` on the operation, the same extension
+  Redocly's console honours.
+
+Requests come from the viewer's browser. That has two consequences:
+
+- **Another origin has to allow it.** A server on another origin must answer CORS, and the page's
+  `connect-src` must list it. The [default policy](#content-security-policy) allows this origin
+  only.
+- **The requests are real.** A Send on `DELETE` deletes. Buttons for anything other than `GET` and
+  `HEAD` are colored as a warning, and that is the only guard.
+
+Like everything else on the page, the console is served as its own files, so it needs no nonce and
+no `'unsafe-inline'` in `script-src`. It hooks into ReDoc 3.0.1's markup, which is not a public
+API. If a future bundle changes that markup, the buttons stop appearing; nothing else on the page
+breaks.
+
 ## Theming
 
 ReDoc 3 themes itself through CSS custom properties — there is no `theme` config object any more —
@@ -665,6 +705,7 @@ Two things worth knowing:
 | `RememberLastDocument` | `/{RoutePrefix}` returns you to the document you were last reading. Defaults to `false`; sets a cookie when on. |
 | `ContentSecurityPolicy` | Sent with each page. Unset, none is sent. A policy your own middleware set is left alone. |
 | `UseDefaultContentSecurityPolicy()` | Sets the verified policy above. |
+| `EnableTryIt(configure)` | Adds a "Try it" console to every operation. `configure` sets `PersistCredentials` (keep typed credentials in `sessionStorage`; default `false`) and `SendCookies` (default `true`). |
 | `PrintStyles` | Print the page light, without the toolbar. Defaults to `true`. |
 | `HideDownloadButton` | Hide ReDoc's "Download OpenAPI description" button. |
 | `RequiredPropsFirst` | List required properties before optional ones in schemas. |
@@ -695,11 +736,13 @@ Two things worth knowing:
 | `AmbiguousMatchException` on a page request | another endpoint of yours matches the same route | move the page with `Route`, or change `RoutePrefix` |
 | Page renders, picker never appears in the sidebar | ReDoc's bundle didn't boot | the strip falls back to sitting over the page; check the console |
 | An endpoint shows up in every document | it has no group name | `.WithGroupName(...)` |
+| "Try it" says the request was blocked | the server is on another origin | allow this origin with CORS there, and add it to `connect-src` |
 
 ## What this doesn't do
 
 - It doesn't generate OpenAPI documents — `AddOpenApi()`, Swashbuckle or NSwag still does that.
-- No "Try it" console: that's a Redocly commercial feature on both ReDoc 2 and 3.
+- The [try-it console](#try-it) has no OAuth login flow, form or multipart bodies, or file uploads
+  yet; those are the next additions.
 - No dark *theme* of its own beyond the palettes: ReDoc 3's own dark mode is the thing being
   configured here.
 - Hiding or gating a documentation page is not API security. The endpoints a document describes need

@@ -1,0 +1,218 @@
+
+/* Try-it console. Every color is one of ReDoc 3's own variables, so it follows the color mode, a
+   dark preset and PrimaryColor with no rules of its own; the fallbacks only matter if ReDoc's
+   styles failed to load. */
+/* Sized and aligned to ReDoc's own Copy split button beside it (34px, measured on 3.0.1).
+   page-actions is a plain block, so an inline button would sit on the text baseline, a few pixels
+   below its neighbour: vertical-align: top lines the two up. */
+.hlibz-tryit-open {
+  font: inherit;
+  font-size: var(--button-font-size, 14px);
+  line-height: 22px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  vertical-align: top;
+  height: 34px;
+  padding: 0 14px;
+  margin-right: 8px;
+  border-radius: var(--button-border-radius, 8px);
+  border: 1px solid var(--color-primary-base, #2563eb);
+  background: var(--color-primary-base, #2563eb);
+  color: var(--bg-color, #fff);
+  cursor: pointer;
+  font-weight: 600;
+}
+.hlibz-tryit-open:hover { filter: brightness(1.08); }
+.hlibz-tryit-open:focus-visible,
+.hlibz-tryit button:focus-visible,
+.hlibz-tryit .hlibz-tryit-input:focus-visible {
+  outline: 2px solid var(--color-primary-base, #2563eb);
+  outline-offset: 2px;
+}
+
+dialog.hlibz-tryit {
+  position: fixed;
+  inset: 0 0 0 auto;
+  margin: 0;
+  width: min(640px, 100vw);
+  max-width: 100vw;
+  height: 100%;
+  max-height: 100%;
+  padding: 0;
+  border: 0;
+  border-left: 1px solid var(--border-color-primary, #d4d4d8);
+  background: var(--bg-color, #fff);
+  color: var(--text-color-primary, #18181b);
+  font-family: var(--font-family-base, system-ui, sans-serif);
+  font-size: var(--font-size-base, 14px);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.18);
+  display: none;
+  flex-direction: column;
+}
+dialog.hlibz-tryit[open] { display: flex; }
+dialog.hlibz-tryit::backdrop { background: rgba(0, 0, 0, 0.35); }
+
+.hlibz-tryit-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color-primary, #d4d4d8);
+}
+.hlibz-tryit-header h2 {
+  flex: 1;
+  margin: 0;
+  font-size: 1.05em;
+  font-family: var(--code-font-family, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+}
+.hlibz-tryit-close {
+  font: inherit;
+  font-size: 1.4em;
+  line-height: 1;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--border-radius, 6px);
+  background: transparent;
+  color: var(--text-color-secondary, #52525b);
+  cursor: pointer;
+}
+.hlibz-tryit-close:hover { background: var(--layer-color, #f4f4f5); }
+
+.hlibz-tryit-method {
+  font-family: var(--code-font-family, ui-monospace, monospace);
+  font-size: 0.8em;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--border-radius, 6px);
+  border: 1px solid currentColor;
+}
+.hlibz-tryit-method-get { color: var(--color-success-base, #16a34a); }
+.hlibz-tryit-method-post { color: var(--color-primary-base, #2563eb); }
+.hlibz-tryit-method-put,
+.hlibz-tryit-method-patch { color: var(--color-warning-base, #d97706); }
+.hlibz-tryit-method-delete { color: var(--color-error-base, #dc2626); }
+
+.hlibz-tryit-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 16px 24px;
+}
+.hlibz-tryit-summary { color: var(--text-color-secondary, #52525b); }
+.hlibz-tryit-section { margin-top: 16px; }
+.hlibz-tryit-section h3 {
+  margin: 0 0 8px;
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-color-secondary, #52525b);
+}
+.hlibz-tryit-scheme {
+  margin: 0 0 10px;
+  padding: 8px 12px 4px;
+  border: 1px solid var(--border-color-primary, #d4d4d8);
+  border-radius: var(--border-radius, 6px);
+}
+.hlibz-tryit-scheme legend {
+  padding: 0 4px;
+  font-size: 0.9em;
+  color: var(--text-color-secondary, #52525b);
+}
+
+.hlibz-tryit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.hlibz-tryit-label code { font-family: var(--code-font-family, ui-monospace, monospace); }
+.hlibz-tryit-required {
+  color: var(--color-error-base, #dc2626);
+  font-size: 0.85em;
+}
+.hlibz-tryit-hint {
+  color: var(--text-color-secondary, #71717a);
+  font-size: 0.85em;
+}
+.hlibz-tryit-input {
+  font: inherit;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: var(--border-radius, 6px);
+  border: 1px solid var(--input-border-color, var(--border-color-primary, #d4d4d8));
+  background: var(--input-bg-color, var(--bg-color, #fff));
+  color: inherit;
+}
+.hlibz-tryit-input[aria-invalid="true"] { border-color: var(--color-error-base, #dc2626); }
+.hlibz-tryit-code {
+  font-family: var(--code-font-family, ui-monospace, monospace);
+  font-size: 0.9em;
+}
+textarea.hlibz-tryit-code { resize: vertical; tab-size: 2; }
+
+.hlibz-tryit-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.hlibz-tryit-send {
+  font: inherit;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: var(--border-radius, 6px);
+  border: 1px solid var(--color-primary-base, #2563eb);
+  background: var(--color-primary-base, #2563eb);
+  color: var(--bg-color, #fff);
+  cursor: pointer;
+}
+/* Not GET: a real change on a real server, and the button says so. */
+.hlibz-tryit-send-unsafe {
+  border-color: var(--color-warning-base, #d97706);
+  background: var(--color-warning-base, #d97706);
+}
+.hlibz-tryit-send:disabled { opacity: 0.6; cursor: progress; }
+
+.hlibz-tryit-response { margin-top: 16px; }
+.hlibz-tryit-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
+.hlibz-tryit-badge {
+  font-family: var(--code-font-family, ui-monospace, monospace);
+  padding: 2px 8px;
+  border-radius: var(--border-radius, 6px);
+  color: var(--bg-color, #fff);
+}
+.hlibz-tryit-success { background: var(--color-success-base, #16a34a); }
+.hlibz-tryit-warning { background: var(--color-warning-base, #d97706); }
+.hlibz-tryit-error { color: var(--color-error-base, #dc2626); }
+.hlibz-tryit-badge.hlibz-tryit-error {
+  background: var(--color-error-base, #dc2626);
+  color: var(--bg-color, #fff);
+}
+.hlibz-tryit-url { overflow-wrap: anywhere; margin: 6px 0; }
+.hlibz-tryit-headers summary {
+  cursor: pointer;
+  color: var(--text-color-secondary, #52525b);
+  margin: 6px 0;
+}
+.hlibz-tryit pre {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--border-radius, 6px);
+  background: var(--code-block-bg-color, var(--layer-color, #f4f4f5));
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 50vh;
+  overflow: auto;
+}
+
+@media print {
+  .hlibz-tryit-open, dialog.hlibz-tryit { display: none !important; }
+}

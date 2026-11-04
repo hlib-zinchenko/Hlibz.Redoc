@@ -48,6 +48,13 @@
     <None Include="assets\README.md" />
   </ItemGroup>
 
+  <!-- The try-it console is our own code, kept as real .js/.css files so it can be read and
+       linted as what it is rather than as a C# string. Loaded once and served beside each page. -->
+  <ItemGroup>
+    <EmbeddedResource Include="assets\redoc-tryit.js" LogicalName="redoc-tryit.js" />
+    <EmbeddedResource Include="assets\redoc-tryit.css" LogicalName="redoc-tryit.css" />
+  </ItemGroup>
+
   <ItemGroup>
     <None Include="README.md" Pack="true" PackagePath="\" />
     <None Include="..\..\docs\icon.png" Pack="true" PackagePath="\" />

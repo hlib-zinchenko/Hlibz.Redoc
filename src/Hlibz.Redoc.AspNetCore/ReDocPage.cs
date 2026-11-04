@@ -40,7 +40,11 @@ internal static class ReDocPage
     private const string ColorModeKey = "redoc.colorMode";
 
     public static string Html(
-        string title, ReDocDocumentsOptions options, bool withPicker, bool withToolbarItems)
+        string title,
+        ReDocDocumentsOptions options,
+        bool withPicker,
+        bool withToolbarItems,
+        string? tryItTag = null)
     {
         string? mode = options.DefaultColorMode switch
         {
@@ -89,6 +93,11 @@ internal static class ReDocPage
         if (withToolbarItems)
         {
             page.Append($"<script src=\"{ToolbarFileName}\"></script>\n");
+        }
+
+        if (tryItTag is not null)
+        {
+            page.Append(tryItTag);
         }
 
         page.Append("</body>\n");
@@ -315,6 +324,11 @@ internal static class ReDocPage
         if (PlacedAt(options, ReDocToolbarPlacement.Sidebar, withPicker, withItems))
         {
             css.Append(ReDocToolbar.SidebarCss).Append('\n');
+        }
+
+        if (options.TryIt is not null)
+        {
+            css.Append(ReDocTryIt.Css);
         }
 
         // Before the accent, so an explicitly set PrimaryColor is the last word on the accent, and

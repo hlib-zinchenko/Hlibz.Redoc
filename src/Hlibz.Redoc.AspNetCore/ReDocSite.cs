@@ -186,15 +186,23 @@ internal sealed class ReDocSite
                     ?? throw SpecUnavailable(page, specsBecause)
                 : null;
 
+            string specUrl = spec is null ? plan.SpecUrlOf(page.Document) : ReDocPage.SpecFileName;
+
             pages.Add(new ReDocSitePage(
                 page.Route,
                 page.Document.Name,
                 ReDocPage.Html(
-                    plan.DocumentTitleOf(page.Document), options, withPicker, withToolbarItems),
+                    plan.DocumentTitleOf(page.Document),
+                    options,
+                    withPicker,
+                    withToolbarItems,
+                    options.TryIt is { } tryIt
+                        ? ReDocTryIt.Tag(specUrl, page.Route, tryIt)
+                        : null),
                 css,
                 ReDocPage.InitScript(
                     ReDocRelativePath.Between(page.Route, bundleRoute),
-                    spec is null ? plan.SpecUrlOf(page.Document) : ReDocPage.SpecFileName,
+                    specUrl,
                     configJson),
                 colorModeScript,
                 withPicker
@@ -207,7 +215,8 @@ internal sealed class ReDocSite
                     : null,
                 page.Document.Unlisted,
                 spec,
-                policies));
+                policies,
+                options.TryIt is not null));
         }
 
         return new ReDocSite(
@@ -291,6 +300,8 @@ internal sealed class ReDocSite
                     ReDocAssets.Write(context, page.ToolbarScript, "text/javascript"),
                 ReDocPage.SpecFileName when page.Spec is not null =>
                     ReDocAssets.WriteSpec(context, page.Spec),
+                ReDocTryIt.FileName when page.TryIt =>
+                    ReDocAssets.Write(context, ReDocTryIt.Script, "text/javascript"),
                 _ => next(context),
             };
         }
@@ -311,7 +322,8 @@ internal sealed record ReDocSitePage(
     string? ToolbarScript,
     bool Unlisted,
     OpenApiSpecSource? Spec,
-    IReadOnlyList<string>? Policies)
+    IReadOnlyList<string>? Policies,
+    bool TryIt = false)
 {
     /// <summary>
     /// The last segment of the route, which is what the page's own folder is called — the target
