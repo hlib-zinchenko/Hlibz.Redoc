@@ -499,48 +499,128 @@
   });
 
   // A form body is edited as one name=value per line, unencoded, which reads far better than the
-  // encoded wire form and is what URLSearchParams turns into it. An array becomes one line per
-  // item (form style, exploded: OpenAPI's default for a form field); a nested object goes as JSON,
-  // which is what most servers that accept one at all expect.
+  // encoded wire form. An array becomes one line per item (form style, exploded: OpenAPI's default
+  // for a form field); a nested object goes as JSON, which is what most servers that accept one at
+  // all expect. Fields named in `skip` (a multipart body's files) are left out.
+  function formLines(example, skip) {
+    if (typeof example === 'string') {
+      // Already in wire form: shown decoded, one field per line.
+      return Array.from(new URLSearchParams(example)).map(function (pair) {
+        return pair[0] + '=' + pair[1];
+      }).join('\n');
+    }
+    if (!example || typeof example !== 'object' || Array.isArray(example)) {
+      return '';
+    }
+    var lines = [];
+    Object.keys(example).forEach(function (name) {
+      if (skip && skip.indexOf(name) >= 0) {
+        return;
+      }
+      [].concat(example[name]).forEach(function (value) {
+        lines.push(name + '=' + (value !== null && typeof value === 'object'
+          ? JSON.stringify(value) : String(value === null ? '' : value)));
+      });
+    });
+    return lines.join('\n');
+  }
+
+  // The edited lines back as [name, value] pairs. The name is trimmed, since stray indentation is
+  // never meant; the value is sent exactly.
+  function parseFormLines(text) {
+    var pairs = [];
+    text.split(/\r?\n/).forEach(function (line) {
+      if (line.trim() === '') {
+        return;
+      }
+      var at = line.indexOf('=');
+      var name = (at < 0 ? line : line.slice(0, at)).trim();
+      if (!name) {
+        throw new Error('"' + line.trim() + '" has no name before its "=".');
+      }
+      pairs.push([name, at < 0 ? '' : line.slice(at + 1)]);
+    });
+    return pairs;
+  }
+
   registerBody({
     matches: function (type) { return /^application\/x-www-form-urlencoded$/i.test(type); },
     hint: 'One name=value per line. Values are URL-encoded when sent.',
     initial: function (media, exampleName) {
-      var example = mediaExample(media, exampleName);
-      if (typeof example === 'string') {
-        // Already in wire form: shown decoded, one field per line.
-        return Array.from(new URLSearchParams(example)).map(function (pair) {
-          return pair[0] + '=' + pair[1];
-        }).join('\n');
-      }
-      if (!example || typeof example !== 'object' || Array.isArray(example)) {
-        return '';
-      }
-      var lines = [];
-      Object.keys(example).forEach(function (name) {
-        [].concat(example[name]).forEach(function (value) {
-          lines.push(name + '=' + (value !== null && typeof value === 'object'
-            ? JSON.stringify(value) : String(value === null ? '' : value)));
-        });
-      });
-      return lines.join('\n');
+      return formLines(mediaExample(media, exampleName));
     },
     encode: function (text) {
       var form = new URLSearchParams();
-      text.split(/\r?\n/).forEach(function (line) {
-        if (line.trim() === '') {
-          return;
-        }
-        // The name is trimmed, since stray indentation is never meant; the value is sent exactly.
-        var at = line.indexOf('=');
-        var name = (at < 0 ? line : line.slice(0, at)).trim();
-        if (!name) {
-          throw new Error('"' + line.trim() + '" has no name before its "=".');
-        }
-        form.append(name, at < 0 ? '' : line.slice(at + 1));
-      });
+      parseFormLines(text).forEach(function (pair) { form.append(pair[0], pair[1]); });
       var encoded = form.toString();
       return encoded === '' ? undefined : encoded;
+    },
+  });
+
+  // Every property a form's schema declares, through $ref and allOf (which is how ASP.NET Core
+  // describes a file beside other form fields), with whether it is required.
+  function formFields(schema, fields, depth) {
+    fields = fields || {};
+    schema = deref(schema);
+    if (!schema || typeof schema !== 'object' || (depth || 0) > 8) {
+      return fields;
+    }
+    var required = Array.isArray(schema.required) ? schema.required : [];
+    Object.keys(schema.properties || {}).forEach(function (name) {
+      fields[name] = { schema: deref(schema.properties[name]) || {}, required: false };
+    });
+    (schema.allOf || []).forEach(function (part) { formFields(part, fields, (depth || 0) + 1); });
+    required.forEach(function (name) {
+      if (fields[name]) {
+        fields[name].required = true;
+      }
+    });
+    return fields;
+  }
+
+  // A file part is a binary string (3.0) or a string with a contentMediaType (3.1); an array of
+  // either is several files under one name.
+  function isFileSchema(schema) {
+    schema = deref(schema) || {};
+    return [].concat(schema.type || []).indexOf('string') >= 0
+      && (schema.format === 'binary' || (!!schema.contentMediaType && !schema.contentEncoding));
+  }
+
+  function fileFieldsOf(media) {
+    var fields = formFields(media && media.schema);
+    return Object.keys(fields).map(function (name) {
+      var schema = fields[name].schema;
+      var many = [].concat(schema.type || []).indexOf('array') >= 0 && isFileSchema(schema.items);
+      return many || isFileSchema(schema)
+        ? { name: name, multiple: many, required: fields[name].required }
+        : null;
+    }).filter(Boolean);
+  }
+
+  // Text fields are edited like a URL-encoded form's; each file the schema declares gets a picker.
+  // The body is FormData, so the browser writes the Content-Type with its boundary itself.
+  registerBody({
+    matches: function (type) { return /^multipart\/form-data$/i.test(type); },
+    hint: 'One name=value per line for the text fields.',
+    files: fileFieldsOf,
+    initial: function (media, exampleName) {
+      var files = fileFieldsOf(media).map(function (f) { return f.name; });
+      return formLines(mediaExample(media, exampleName), files);
+    },
+    encode: function (text, files) {
+      var form = new FormData();
+      var any = false;
+      parseFormLines(text).forEach(function (pair) {
+        form.append(pair[0], pair[1]);
+        any = true;
+      });
+      (files || []).forEach(function (f) {
+        Array.prototype.forEach.call(f.input.files, function (file) {
+          form.append(f.name, file, file.name);
+          any = true;
+        });
+      });
+      return any ? form : undefined;
     },
   });
 
@@ -626,6 +706,7 @@
         type: state.body.typeSelect.value,
         example: state.body.exampleSelect.value,
         text: state.body.editor.value,
+        files: state.body.files(),
       };
     }
     if (state.responseDone) {
@@ -911,6 +992,34 @@
       }
       var editor = h('textarea', { class: 'hlibz-tryit-input hlibz-tryit-code', rows: 12, spellcheck: 'false' });
       var note = h('span', { class: 'hlibz-tryit-hint' });
+      // A picker per file the media type's schema declares (multipart only). A picked file can't be
+      // put back into a new input, so the inputs themselves are what a draft keeps and reuses.
+      var filesBox = h('div', { class: 'hlibz-tryit-files' });
+      var fileInputs = [];
+      var keptFiles = (draft && draft.body && draft.body.files) || [];
+      var renderFiles = function () {
+        var handler = bodyHandlerFor(typeSelect.value);
+        var wanted = handler.files ? handler.files(requestBody.content[typeSelect.value]) : [];
+        var reusable = keptFiles.concat(fileInputs);
+        fileInputs = wanted.map(function (f) {
+          var kept = reusable.filter(function (k) {
+            return k.name === f.name && k.input.multiple === f.multiple;
+          })[0];
+          return {
+            name: f.name,
+            required: f.required,
+            input: kept ? kept.input : h('input', { type: 'file', class: 'hlibz-tryit-input', multiple: f.multiple }),
+          };
+        });
+        filesBox.replaceChildren.apply(filesBox, fileInputs.map(function (f) {
+          return field(
+            h('span', null, h('code', { text: f.name }),
+              f.required ? h('span', { class: 'hlibz-tryit-required', text: ' required' }) : null),
+            f.input,
+            f.input.multiple ? 'One or more files.' : null);
+        }));
+        filesBox.hidden = !fileInputs.length;
+      };
       // Offered only when the media type names more than one example; each type has its own.
       var exampleSelect = h('select', { class: 'hlibz-tryit-input' });
       var exampleField = field('Example', exampleSelect);
@@ -931,10 +1040,12 @@
       };
       typeSelect.addEventListener('change', function () {
         listExamples();
+        renderFiles();
         fill();
       });
       exampleSelect.addEventListener('change', fill);
       listExamples();
+      renderFiles();
       if (draft && draft.body && draft.body.type === typeSelect.value && draft.body.example
           && namedExamples(requestBody.content[typeSelect.value])
             .some(function (n) { return n.key === draft.body.example; })) {
@@ -948,12 +1059,14 @@
         typeSelect: typeSelect,
         exampleSelect: exampleSelect,
         editor: editor,
+        files: function () { return fileInputs; },
         required: !!requestBody.required,
       };
       bodySection = h('section', { class: 'hlibz-tryit-section' },
         h('h3', null, 'Body', requestBody.required ? h('span', { class: 'hlibz-tryit-required', text: ' required' }) : null),
         types.length > 1 ? field('Content type', typeSelect) : h('p', { class: 'hlibz-tryit-hint', text: types[0] }),
         exampleField,
+        filesBox,
         editor,
         h('div', { class: 'hlibz-tryit-body-bar' },
           note,
@@ -1091,9 +1204,18 @@
     if (state.body) {
       var type = state.body.typeSelect.value;
       var text = state.body.editor.value;
+      var files = state.body.files();
+      var noFile = files.filter(function (f) {
+        f.input.removeAttribute('aria-invalid');
+        return f.required && !f.input.files.length;
+      });
+      if (noFile.length) {
+        noFile.forEach(function (f) { f.input.setAttribute('aria-invalid', 'true'); });
+        throw new Error('Choose a file for: ' + noFile.map(function (f) { return f.name; }).join(', ') + '.');
+      }
       var encoded;
       try {
-        encoded = bodyHandlerFor(type).encode(text);
+        encoded = bodyHandlerFor(type).encode(text, files);
       } catch (e) {
         throw new Error('The body is not valid for ' + type + ': ' + e.message);
       }
@@ -1102,7 +1224,10 @@
       }
       if (encoded !== undefined) {
         req.body = encoded;
-        req.headers.set('Content-Type', type);
+        // FormData's Content-Type carries a boundary only the browser knows, so it writes it.
+        if (!(encoded instanceof FormData)) {
+          req.headers.set('Content-Type', type);
+        }
       }
     }
 
@@ -1197,7 +1322,15 @@
     req.headers.forEach(function (value, name) {
       parts.push('-H ' + shellQuote(name + ': ' + value));
     });
-    if (req.body !== undefined) {
+    if (req.body instanceof FormData) {
+      // --form-string, not -F, for text: -F reads a value starting with @ or < as a file. A file
+      // goes by its name alone, since the page never learns where it lives on disk.
+      req.body.forEach(function (value, name) {
+        parts.push(typeof value === 'string'
+          ? '--form-string ' + shellQuote(name + '=' + value)
+          : '-F ' + shellQuote(name + '=@' + value.name + (value.type ? ';type=' + value.type : '')));
+      });
+    } else if (req.body !== undefined) {
       parts.push('--data-raw ' + shellQuote(req.body));
     }
     return parts.join(' \\\n  ');
@@ -1588,12 +1721,21 @@
       body = binaryBody(bytes, type, response.headers.get('content-disposition'));
     }
 
+    // fetch follows redirects without a word, so a 302 to a sign-in page arrives as that page's
+    // "200 OK". The status is then some other URL's, and matching it against this operation's
+    // documented responses would vouch for it; the redirect is said instead.
+    var redirect = response.redirected
+      ? h('p', { class: 'hlibz-tryit-undocumented',
+        text: 'Redirected to ' + response.url + '. The status is that URL\'s, not this operation\'s.' })
+      : null;
+
     // Spec text goes in as text, never as the Markdown ReDoc would render it.
-    var documented = documentedResponse(state.entry.op, response.status);
+    var documented = redirect ? null : documentedResponse(state.entry.op, response.status);
     // "Unauthorized" under a 401 Unauthorized says nothing twice.
     var says = documented && documented.description
       && documented.description.toLowerCase() !== (response.statusText || '').toLowerCase();
-    var meaning = documented
+    var meaning = redirect ? redirect
+      : documented
       ? (says
         ? h('p', { class: 'hlibz-tryit-hint hlibz-tryit-meaning',
           text: (documented.key === String(response.status) ? '' : documented.key + ': ')

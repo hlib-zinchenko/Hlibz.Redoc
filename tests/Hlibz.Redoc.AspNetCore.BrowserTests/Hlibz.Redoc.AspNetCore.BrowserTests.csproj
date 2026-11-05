@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The try-it console's behaviour, in a real browser. Its own project rather than part of the
+       host suite, because it needs a browser: the host suite stays runnable anywhere. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.Playwright" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- The samples' own API, so the console is exercised on the same operations a person tries by
+       hand in Sample.Own. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Hlibz.Redoc.AspNetCore\Hlibz.Redoc.AspNetCore.csproj" />
+    <ProjectReference Include="..\..\samples\Sample.Shared\Sample.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

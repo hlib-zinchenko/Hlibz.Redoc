@@ -51,11 +51,13 @@ one adapter is the supported case; don't "fix" this by renaming types apart.
 # Build everything
 dotnet build
 
-# Run the tests — four suites: core, the shared conformance source per adapter, then our host
+# Run the tests — five suites: core, the shared conformance source per adapter, our host, then
+# the try-it console in a browser (system Chrome, else Playwright's Chromium is installed)
 dotnet test --project tests/Hlibz.Redoc.Extensions.Core.Tests
 dotnet test --project tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests
 dotnet test --project tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests
 dotnet test --project tests/Hlibz.Redoc.AspNetCore.Tests
+dotnet test --project tests/Hlibz.Redoc.AspNetCore.BrowserTests
 
 # Run the sample apps (each opens /api-docs automatically, see launchSettings.json)
 dotnet run --project samples/Sample.RedocAspNetCore   # :5299
@@ -264,9 +266,15 @@ takes one project at a time.
       contrast, is read with `JSON.parse` and must be JSON — YAML gets no buttons. Two traps:
       `replaceChildren` writes a `null` argument out as the text "null" where `h()` skips it, and
       `.hlibz-tryit [hidden]` covers the whole console for the same reason as the picker's rule.
-    - What the C# suite can't reach is the script's behaviour; `ReDocTryItTests` covers the
-      server half only. A change to the script wants `Sample.Own` open: send POST /widgets with
-      and without a token (401, then 201).
+    - Multipart bodies are FormData, so `buildRequest` must **not** set `Content-Type` for them:
+      only the browser knows the boundary. A file picker can't be refilled, so a draft keeps the
+      `<input type=file>` elements themselves and the next panel reuses them. `fetch` follows
+      redirects silently; a redirected response says where to and skips the documented-status
+      match, which would otherwise vouch for a sign-in page's `200`.
+    - `ReDocTryItTests` covers the server half only; the script's behaviour is
+      `tests/Hlibz.Redoc.AspNetCore.BrowserTests` (Playwright, a smoke test of the paths a person
+      checks by hand). It finds operations by anchor, so it reads the tag's slug off the sidebar
+      rather than assuming one. Something it doesn't cover still wants `Sample.Own` open.
   - `PickerPlacement` and `ToolbarItemsPlacement` (`ReDocToolbarPlacement`: `TopRight`,
     `BottomRight`, `Sidebar`) place the picker and the links **independently**. The mechanism is
     one container per spot, found by that spot's own class: matching placements resolve to the
@@ -434,7 +442,11 @@ takes one project at a time.
   multiple response-schema/status-tab combinations render correctly, and every property carries a
   `[Description]` so field descriptions are visible everywhere. `POST /widgets` carries three
   named request examples (two accepted, one the 400 for a zero price), for ReDoc's example
-  dropdown and the try-it console's picker. It's a plain `Microsoft.NET.Sdk`
+  dropdown and the try-it console's picker. `POST /widgets/{id}/reviews` (a form, offered as both
+  urlencoded and multipart) and `POST /widgets/{id}/photos` (an `IFormFile` upload) are there for
+  the console's form editors, with named examples too. `WidgetReview` is a class with properties,
+  not a positional record: form binding requires every constructor parameter, even a nullable or
+  defaulted one, and answers a bare 400. It's a plain `Microsoft.NET.Sdk`
   library, so the minimal-API extension methods the web-SDK samples get implicitly are imported by
   hand.
 - `samples/Sample.Own/` (:5499) — the same shared documents on our own host. Its `Program.cs` sets
@@ -486,6 +498,11 @@ takes one project at a time.
   on port 0 (`ReDocTestApp`) because **endpoint routing matches nothing in a hand-built
   pipeline** — `((IApplicationBuilder)app).Build()` off a `WebApplication` 404s every mapped
   route, which is why the adapters' middleware-based harness couldn't be reused.
+- `tests/Hlibz.Redoc.AspNetCore.BrowserTests/` — the try-it console in a real browser
+  (Microsoft.Playwright), against the samples' own endpoints plus one that redirects. Its own
+  project so the host suite still runs where there is no browser. Chrome is launched through the
+  `chrome` channel; only if that fails is Playwright's Chromium installed, via
+  `Microsoft.Playwright.Program.Main`, which needs no PowerShell.
 - `tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests/` and
   `tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests/` — the conformance source plus that one alias
   file, nothing else. Both override `TargetFramework` to `net10.0` and reference

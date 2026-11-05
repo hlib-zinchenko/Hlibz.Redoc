@@ -168,7 +168,6 @@ covers the whole page, keyed by scheme name.
 - honouring `x-hideTryItPanel`
 
 **Later, each a registry entry or a small option**:
-- `multipart/form-data` (file inputs)
 - OAuth2 client-credentials, then authorization-code with PKCE (needs a redirect page we serve)
 - apiKey in a cookie (not settable from `fetch`; would need `document.cookie` and same-site
   caveats)
@@ -181,7 +180,10 @@ in memory when the drawer closes, with a Reset to example for the body. Then
 `application/x-www-form-urlencoded` (a registry entry: one `name=value` per line), a picker for a
 media type's named `examples` (parameters take their first), and `SafeMethodsOnly`, which mounts
 the button only on GET, HEAD, OPTIONS, TRACE and QUERY — a convenience for docs in front of a real
-system, not access control.
+system, not access control. Then `multipart/form-data`, with a file picker per binary property
+(found through `$ref` and `allOf`, the shape ASP.NET Core gives an `IFormFile` beside other form
+fields), and a notice when `fetch` followed a redirect — otherwise a sign-in page's `200` was
+matched against the operation's own and shown as success.
 
 **Not doing**: the 2.x adapters, YAML specs (a YAML page renders, with no buttons, and the
 README says so), `servers` variables beyond plain substitution.
@@ -190,15 +192,15 @@ README says so), `servers` variables beyond plain substitution.
 
 The C# suites can cover the server half: the file is served, the page links it only when enabled,
 caching headers, and that the CSP still holds. They can't reach the half that matters: section-id
-parsing, `$ref` resolution, example generation and request building. Two honest options:
+parsing, `$ref` resolution, example generation and request building.
 
-- **Playwright against `Sample.Own`** (`IDEAS.md`'s "protecting what already exists"). Open the
-  drawer on each sample operation, send, and assert the status. This feature is the best argument
-  yet for that suite. It also catches the only real fragility: a ReDoc upgrade renaming
-  `page-actions` or `data-item-kind`.
-- Keep the pure functions free of the DOM, so they could later run under a JS test runner. That
-  means a Node toolchain in CI, which the repo has avoided so far (`assets/README.md`). Playwright
-  is the one to pay for.
+That half now has `tests/Hlibz.Redoc.AspNetCore.BrowserTests`: Playwright for .NET driving the
+samples' widget catalog in a real Chrome. It is a smoke test, not a catalogue — 401 then 201 on
+POST /widgets, a multipart upload, a form's named examples, a followed redirect, a draft across
+close and reopen — and it also catches the one real fragility: a ReDoc upgrade renaming
+`page-actions` or `data-item-kind` leaves every test without a button to press. It uses the
+system Chrome (GitHub's Ubuntu image has one), and installs Playwright's Chromium through the
+package's own entry point only when there isn't one, so it needs no Node and no PowerShell.
 
 `Sample.Shared` now has what the sample needed to exercise auth: the widget catalog's POST, PUT and
 DELETE require a bearer token (any non-empty one) and declare a `bearer` scheme on just those

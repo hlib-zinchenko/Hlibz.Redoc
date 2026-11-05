@@ -491,11 +491,15 @@ What you typed, and the last response, are still there when you reopen the same 
 the page reloads; **Reset to example** puts the generated body back.
 
 - **The response**: status, time and size, and what the operation documents that status as —
-  or a note that it doesn't document it at all. JSON bodies fold and switch between pretty and raw;
+  or a note that it doesn't document it at all. A request that was redirected says where to, since
+  the status shown is then the other URL's — a sign-in page's `200`, say — and isn't matched
+  against the operation's responses. JSON bodies fold and switch between pretty and raw;
   a binary body (an image, a PDF) is offered as a **Download** instead of being shown as text.
   **Cancel** stops a request that is taking too long.
 - **Copy as cURL**: the same request as a `curl` command line, with the credentials typed into the
-  panel. The browser's cookies aren't included, so an API using cookie auth needs them added.
+  panel. The browser's cookies aren't included, so an API using cookie auth needs them added. A
+  file in a multipart body goes in by name only (`-F 'photo=@front.png'`): run it where the file
+  is.
 - **Auth**: bearer tokens, HTTP Basic, and API keys in a header or the query string. OAuth 2.0 and
   OpenID Connect schemes take a pasted access token; there is no login flow yet. A token is entered
   once per security scheme and covers every operation on the page. Cookie parameters get no field —
@@ -534,8 +538,11 @@ the page reloads; **Reset to example** puts the generated body back.
   Still, choose `Local` only for docs whose viewers expect their browser to remember a key, and
   never for a production token someone might type on a shared machine.
 - **Bodies**: JSON, with an example built from the schema's `example`, `default` or `enum` values
-  where it has them, and `application/x-www-form-urlencoded`, edited as one `name=value` per line.
-  When a media type declares several named `examples`, a picker switches between them. Any other
+  where it has them; `application/x-www-form-urlencoded`, edited as one `name=value` per line; and
+  `multipart/form-data`, whose text fields are edited the same way and whose files — any property
+  the schema declares as `format: binary`, which is how ASP.NET Core describes an `IFormFile` —
+  each get a file picker. When a media type declares several named `examples`, a picker switches
+  between them. Any other
   media type is sent as typed, with its declared `Content-Type`.
 - **Specs**: the console reads JSON OpenAPI documents only. A page whose spec is YAML still
   renders, but gets no **Try it** buttons.
@@ -795,8 +802,7 @@ Two things worth knowing:
 ## What this doesn't do
 
 - It doesn't generate OpenAPI documents — `AddOpenApi()`, Swashbuckle or NSwag still does that.
-- The [try-it console](#try-it) has no OAuth login flow, multipart bodies, file uploads or YAML
-  specs yet; the first three are the next additions.
+- The [try-it console](#try-it) has no OAuth login flow and doesn't read YAML specs.
 - No dark *theme* of its own beyond the palettes: ReDoc 3's own dark mode is the thing being
   configured here.
 - Hiding or gating a documentation page is not API security. The endpoints a document describes need

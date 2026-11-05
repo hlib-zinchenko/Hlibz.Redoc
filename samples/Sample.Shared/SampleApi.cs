@@ -1,10 +1,12 @@
 // This is a plain class library rather than a web SDK project, so the minimal-API extension
 // methods the samples get implicitly have to be imported by hand.
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi;
@@ -112,6 +114,86 @@ public static class SampleApi
             .RequireSampleToken()
             .WithGroupName("widgets");
 
+        // Two form bodies, so the try-it console's form editors have something real to send: a
+        // review as plain form fields, and a photo as a multipart upload. Antiforgery is off
+        // because these are API endpoints a token protects, not forms a page of ours renders.
+        app.MapPost("/widgets/{id:guid}/reviews", Results<Created<WidgetReview>, NotFound<ErrorResponse>, BadRequest<ValidationErrorResponse>> (Guid id, [FromForm] WidgetReview review) =>
+        {
+            if (!Widget.Sample.Any(w => w.Id == id))
+            {
+                return TypedResults.NotFound(new ErrorResponse("No widget matches the given id.", Guid.NewGuid().ToString()));
+            }
+
+            if (review.Rating is < 1 or > 5)
+            {
+                return TypedResults.BadRequest(new ValidationErrorResponse(
+                    "One or more fields failed validation.",
+                    new Dictionary<string, string[]> { ["rating"] = ["Rating must be from 1 to 5."] }));
+            }
+
+            return TypedResults.Created($"/widgets/{id}/reviews/{Guid.NewGuid()}", review);
+        })
+            .Produces<InternalErrorResponse>(StatusCodes.Status500InternalServerError)
+            .RequireSampleToken()
+            .DisableAntiforgery()
+            .AddOpenApiOperationTransformer((operation, _, _) =>
+            {
+                // Every form media type the generator offered gets the same examples.
+                foreach (OpenApiMediaType media in operation.RequestBody?.Content?.Values ?? [])
+                {
+                    media.Examples = ReviewExamples();
+                }
+
+                return Task.CompletedTask;
+            })
+            .WithGroupName("widgets");
+
+        app.MapPost("/widgets/{id:guid}/photos", Results<Created<PhotoReceipt>, NotFound<ErrorResponse>, BadRequest<ValidationErrorResponse>> (Guid id, IFormFile photo, [FromForm] string? caption) =>
+        {
+            if (!Widget.Sample.Any(w => w.Id == id))
+            {
+                return TypedResults.NotFound(new ErrorResponse("No widget matches the given id.", Guid.NewGuid().ToString()));
+            }
+
+            if (!photo.ContentType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+            {
+                return TypedResults.BadRequest(new ValidationErrorResponse(
+                    "One or more fields failed validation.",
+                    new Dictionary<string, string[]> { ["photo"] = [$"Expected an image, got {photo.ContentType}."] }));
+            }
+
+            // Nothing is stored: the sample only says what arrived.
+            return TypedResults.Created(
+                $"/widgets/{id}/photos/{Guid.NewGuid()}",
+                new PhotoReceipt(id, photo.FileName, photo.ContentType, photo.Length, caption));
+        })
+            .Produces<InternalErrorResponse>(StatusCodes.Status500InternalServerError)
+            .RequireSampleToken()
+            .DisableAntiforgery()
+            .AddOpenApiOperationTransformer((operation, _, _) =>
+            {
+                // Only the text fields have examples; a file can't be one.
+                foreach (OpenApiMediaType media in operation.RequestBody?.Content?.Values ?? [])
+                {
+                    media.Examples = new Dictionary<string, IOpenApiExample>
+                    {
+                        ["captioned"] = new OpenApiExample
+                        {
+                            Summary = "With a caption",
+                            Value = new JsonObject { ["caption"] = "Front view, studio lighting" },
+                        },
+                        ["bare"] = new OpenApiExample
+                        {
+                            Summary = "Just the file",
+                            Value = new JsonObject(),
+                        },
+                    };
+                }
+
+                return Task.CompletedTask;
+            })
+            .WithGroupName("widgets");
+
         IEnumerable<Manufacturer> manufacturers = Widget.Sample.Select(w => w.Manufacturer);
 
         app.MapGet("/manufacturers", () => TypedResults.Ok(manufacturers))
@@ -173,6 +255,36 @@ public static class SampleApi
             },
         };
     }
+
+    /// <summary>
+    /// Named examples for posting a review as a form: plain fields, a repeated field, and the 400
+    /// a rating out of range gets.
+    /// </summary>
+    private static Dictionary<string, IOpenApiExample> ReviewExamples() => new()
+    {
+        ["glowing"] = new OpenApiExample
+        {
+            Summary = "Five stars",
+            Value = new JsonObject { ["rating"] = 5, ["comment"] = "Types like a dream." },
+        },
+        ["tagged"] = new OpenApiExample
+        {
+            Summary = "With tags",
+            Description = "`tags` is repeated once per value, as a form sends an array.",
+            Value = new JsonObject
+            {
+                ["rating"] = 4,
+                ["comment"] = "Loud, but worth it.",
+                ["tags"] = new JsonArray("clicky", "sturdy"),
+            },
+        },
+        ["outOfRange"] = new OpenApiExample
+        {
+            Summary = "Rejected: a rating of 9",
+            Description = "Fails validation, so the endpoint answers 400.",
+            Value = new JsonObject { ["rating"] = 9 },
+        },
+    };
 
     /// <summary>The security scheme the widget catalog's write operations declare.</summary>
     private const string BearerScheme = "bearer";
