@@ -199,6 +199,42 @@ public partial class ReDocTryItTests
     }
 
     [Fact]
+    public async Task StoredCredentials_ASpecOnAnotherOriginStaysReachable()
+    {
+        // The imposed policy would otherwise block ReDoc's own fetch of the spec: a page that
+        // worked with no policy at all would go blank the moment storage was turned on.
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            documents:
+            [
+                new ReDocDocument("locations")
+                {
+                    SpecUrl = "https://specs.example.com:8443/locations.json",
+                },
+                new ReDocDocument("taxes") { SpecUrl = "//cdn.example.com/taxes.json" },
+            ],
+            configure: options => options.EnableTryIt(
+                tryIt => tryIt.CredentialStorage = ReDocTryItCredentialStorage.Session));
+
+        HttpResponseMessage page = await app.GetAsync("/api-docs/locations/");
+
+        string policy = Assert.Single(page.Headers.GetValues("Content-Security-Policy"));
+        Assert.Contains(
+            "connect-src 'self' cdn.example.com https://specs.example.com:8443;",
+            policy,
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("/openapi/locations.json", null)]
+    [InlineData("openapi.json", null)]
+    [InlineData("../specs/locations.json", null)]
+    [InlineData("https://specs.example.com/a.json", "https://specs.example.com")]
+    [InlineData("http://localhost:5000/a.json", "http://localhost:5000")]
+    [InlineData("//cdn.example.com/a.json", "cdn.example.com")]
+    public void CrossOriginSource_OnlyForAnotherOrigin(string specUrl, string? expected) =>
+        Assert.Equal(expected, ReDocSite.CrossOriginSource(specUrl));
+
+    [Fact]
     public async Task CredentialLifetime_DefaultsToEightHoursOnceStored()
     {
         await using ReDocTestApp memory = await ReDocTestApp.StartAsync(

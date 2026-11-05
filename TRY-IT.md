@@ -14,7 +14,8 @@ across operations, Escape and focus return work, and dark mode needed no extra r
 on the open questions at the end of this file:
 
 1. **Placement**: in `page-actions`, beside Copy.
-2. **Auth entry**: in the drawer only, but per scheme, so it is entered once per page.
+2. **Auth entry**: in the drawer only, but per scheme, so it is entered once per page — or once
+   per app, when `CredentialStorage` keeps it in the browser.
 3. **Non-GET Send**: one click, with the button colored as a warning.
 4. **Name**: `EnableTryIt()`.
 5. **Scalar link recipe**: not written yet.
@@ -76,11 +77,12 @@ options.EnableTryIt(tryIt =>
 });
 ```
 
-The minimum is a toggle. Everything else is open (see the questions at the end). Server side it is
-the existing machinery: `ReDocPage` emits `<script type="module" src="redoc-tryit.js">` and a
-stylesheet link, and `ReDocSite` adds the file. The script itself is the same for every page, so
-it can live under `_redoc/` with `immutable` caching like the bundle. Only a page's config
-(spec URL, server base) varies, and that already travels in `redoc-init.js`.
+The minimum is a toggle. Server side it is the existing machinery: `ReDocPage` emits
+`<script type="module" src="redoc-tryit.js">`, and the console's CSS joins the page's own
+stylesheet. *As built*, the script is served **beside each page**, inside that document's endpoint
+group, not once under `_redoc/` as first proposed: a policy on a gated document has to cover its
+console too, and `_redoc/` is shared by every page. What varies per page (spec URL, app base)
+travels as `data-` attributes on the script tag, not in `redoc-init.js`.
 
 ### Client architecture
 
@@ -181,7 +183,8 @@ media type's named `examples` (parameters take their first), and `SafeMethodsOnl
 the button only on GET, HEAD, OPTIONS, TRACE and QUERY — a convenience for docs in front of a real
 system, not access control.
 
-**Not doing**: the 2.x adapters, YAML specs, `servers` variables beyond plain substitution.
+**Not doing**: the 2.x adapters, YAML specs (a YAML page renders, with no buttons, and the
+README says so), `servers` variables beyond plain substitution.
 
 ## Testing
 
@@ -197,8 +200,9 @@ parsing, `$ref` resolution, example generation and request building. Two honest 
   means a Node toolchain in CI, which the repo has avoided so far (`assets/README.md`). Playwright
   is the one to pay for.
 
-`Sample.Shared` will need a bearer `securityScheme` (and a protected endpoint) so the sample
-exercises auth. Today's documents declare only `components.schemas` (*measured*).
+`Sample.Shared` now has what the sample needed to exercise auth: the widget catalog's POST, PUT and
+DELETE require a bearer token (any non-empty one) and declare a `bearer` scheme on just those
+operations.
 
 ## Risks
 

@@ -389,13 +389,16 @@
   }
 
   var credentials = {};
+  // Set once a write fails (quota, blocked storage). From then on memory is the only copy, so a
+  // read that finds nothing must not wipe it.
+  var storageBroken = false;
 
   // Stored as { expires, credentials }, expires being epoch milliseconds or null. Read again on
-  // every open, so a key saved in another tab (localStorage) is picked up and an expired one is
-  // dropped — from memory too, so an open page doesn't keep sending it.
+  // every open, so another tab's change shows up here: a key saved there is picked up, and one
+  // forgotten or expired there is dropped from memory too, so an open page doesn't keep sending it.
   function loadCredentials() {
     var store = credentialStore();
-    if (!store) {
+    if (!store || storageBroken) {
       return;
     }
     var saved = null;
@@ -404,6 +407,7 @@
     } catch (e) { /* unreadable: treated as nothing saved */ }
     if (!saved || typeof saved !== 'object' || !saved.credentials
         || typeof saved.credentials !== 'object') {
+      credentials = {};
       return;
     }
     if (typeof saved.expires === 'number' && saved.expires <= Date.now()) {
@@ -424,7 +428,9 @@
         expires: config.lifetime ? Date.now() + config.lifetime * 1000 : null,
         credentials: credentials,
       }));
-    } catch (e) { /* storage full or blocked: memory only */ }
+    } catch (e) {
+      storageBroken = true; // storage full or blocked: memory only from here on
+    }
   }
 
   function describeLifetime(seconds) {
@@ -871,6 +877,23 @@
         }));
     });
 
+    // Cookie parameters get no field, since a page can't set a request's Cookie header. Named
+    // rather than left out, so a request that fails for want of one says why.
+    var cookies = entry.params.filter(function (p) { return p.in === 'cookie'; });
+    var cookieSection = cookies.length
+      ? h('section', { class: 'hlibz-tryit-section' },
+        h('h3', { text: 'Cookies' }),
+        h('p', { class: 'hlibz-tryit-hint' },
+          // h() flattens one level, so the per-cookie pieces are concatenated into one list.
+          [].concat.apply([], cookies.map(function (p, i) {
+            return [i ? ', ' : null, h('code', { text: p.name }), p.required ? ' (required)' : null];
+          })),
+          ': a browser doesn\'t let a page set these. '
+            + (config.cookies
+              ? 'The request carries whatever cookies this browser already holds for the server.'
+              : 'This console is set not to send cookies at all.')))
+      : null;
+
     // Body
     var bodySection = null;
     var requestBody = deref(op.requestBody);
@@ -999,11 +1022,12 @@
         h('section', { class: 'hlibz-tryit-section' }, field('Server', serverSelect)),
         authSection,
         paramSections,
+        cookieSection,
         bodySection,
         h('div', { class: 'hlibz-tryit-actions' },
           sendButton,
           state.cancelButton,
-          h('span', { class: 'hlibz-tryit-hint', text: (navigator.platform.indexOf('Mac') >= 0 ? '⌘' : 'Ctrl') + '+Enter' }),
+          h('span', { class: 'hlibz-tryit-hint', text: (/Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl') + '+Enter' }),
           curlButton),
         state.response));
 
@@ -1196,6 +1220,126 @@
   // Past this size a tree of nodes costs more than it helps: Pretty falls back to indented text.
   var TREE_LIMIT = 512 * 1024;
 
+  // A number exactly as the server wrote it. JSON.parse would turn 1234567890123456789 into
+  // 1234567890123456800, and the Pretty view would then show, and copy, an id that doesn't exist.
+  function RawNumber(text) {
+    this.text = text;
+  }
+
+  // JSON.parse's grammar, but numbers kept as RawNumber and objects without a prototype, so a
+  // "__proto__" key is just a key. Throws a SyntaxError where JSON.parse would.
+  var NUMBER = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
+  var STRING = /"(?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"/y;
+
+  function parseJson(text) {
+    var at = 0;
+
+    function fail() {
+      throw new SyntaxError('Unexpected token at position ' + at);
+    }
+    function space() {
+      while (at < text.length && ' \t\n\r'.indexOf(text.charAt(at)) >= 0) {
+        at++;
+      }
+    }
+    function match(pattern) {
+      pattern.lastIndex = at;
+      var found = pattern.exec(text);
+      if (!found) {
+        fail();
+      }
+      at = pattern.lastIndex;
+      return found[0];
+    }
+    function expect(char) {
+      space();
+      if (text.charAt(at) !== char) {
+        fail();
+      }
+      at++;
+    }
+    function value() {
+      space();
+      var c = text.charAt(at);
+      if (c === '"') {
+        return JSON.parse(match(STRING));
+      }
+      if (c === '{') {
+        at++;
+        var object = Object.create(null);
+        space();
+        if (text.charAt(at) === '}') {
+          at++;
+          return object;
+        }
+        do {
+          space();
+          var key = JSON.parse(match(STRING));
+          expect(':');
+          object[key] = value();
+          space();
+        } while (text.charAt(at) === ',' && ++at);
+        expect('}');
+        return object;
+      }
+      if (c === '[') {
+        at++;
+        var array = [];
+        space();
+        if (text.charAt(at) === ']') {
+          at++;
+          return array;
+        }
+        do {
+          array.push(value());
+          space();
+        } while (text.charAt(at) === ',' && ++at);
+        expect(']');
+        return array;
+      }
+      var words = { t: 'true', f: 'false', n: 'null' };
+      if (words[c]) {
+        if (text.slice(at, at + words[c].length) !== words[c]) {
+          fail();
+        }
+        at += words[c].length;
+        return JSON.parse(words[c]);
+      }
+      return new RawNumber(match(NUMBER));
+    }
+
+    var result = value();
+    space();
+    if (at < text.length) {
+      fail();
+    }
+    return result;
+  }
+
+  // JSON.stringify(value, null, 2) for what parseJson returns, numbers written as they came.
+  function prettyJson(value, indent) {
+    indent = indent || '';
+    if (value instanceof RawNumber) {
+      return value.text;
+    }
+    if (value === null || typeof value !== 'object') {
+      return JSON.stringify(value);
+    }
+    var inner = indent + '  ';
+    if (Array.isArray(value)) {
+      return value.length
+        ? '[\n' + value.map(function (v) { return inner + prettyJson(v, inner); }).join(',\n')
+          + '\n' + indent + ']'
+        : '[]';
+    }
+    var names = Object.keys(value);
+    return names.length
+      ? '{\n' + names.map(function (k) {
+        return inner + JSON.stringify(k) + ': ' + prettyJson(value[k], inner);
+      }).join(',\n') + '\n' + indent + '}'
+      : '{}';
+  }
+
   // Pretty JSON as a tree whose objects and arrays fold. Built from nodes and textContent only, like
   // everything else here: a response is data from a server, never markup.
   function jsonTree(value) {
@@ -1210,6 +1354,12 @@
     ];
     var comma = last ? '' : ',';
 
+    if (value instanceof RawNumber) {
+      return h('div', { class: 'hlibz-tryit-json-line' },
+        label,
+        h('span', { class: 'hlibz-tryit-json-number', text: value.text }),
+        comma);
+    }
     if (value === null || typeof value !== 'object') {
       var kind = value === null ? 'null' : typeof value;
       return h('div', { class: 'hlibz-tryit-json-line' },
@@ -1291,11 +1441,11 @@
     var isJson = false;
     if (maybeJson) {
       try {
-        value = JSON.parse(text);
+        value = parseJson(text);
         isJson = true;
       } catch (e) { /* not JSON after all: shown as it came */ }
     }
-    var pretty = isJson ? JSON.stringify(value, null, 2) : null;
+    var pretty = isJson ? prettyJson(value) : null;
 
     var view = h('div', { class: 'hlibz-tryit-view' });
     var tree = null;
@@ -1520,14 +1670,28 @@
     if (!response.ok) {
       throw new Error('HTTP ' + response.status);
     }
-    return response.json();
-  }).then(function (document_) {
-    spec = document_;
+    return response.text();
+  }).then(function (text) {
+    try {
+      spec = JSON.parse(text);
+    } catch (e) {
+      // ReDoc reads YAML too; this console doesn't carry a YAML parser.
+      throw new Error('it is not JSON, and the console reads JSON documents only');
+    }
     mount();
-    // ReDoc renders operations as they come near the viewport, so new ones keep arriving.
-    new MutationObserver(scheduleMount).observe(document.body, { childList: true, subtree: true });
+    // ReDoc renders operations as they come near the viewport, so new ones keep arriving. The
+    // console's own changes — a response tree can be thousands of nodes — never add a section.
+    new MutationObserver(function (records) {
+      for (var i = 0; i < records.length; i++) {
+        if (!dialog || !dialog.contains(records[i].target)) {
+          scheduleMount();
+          return;
+        }
+      }
+    }).observe(document.body, { childList: true, subtree: true });
   }).catch(function (error) {
     // The page itself still works; only the console is missing.
-    console.warn('Try it: could not read the OpenAPI document (' + error.message + ').');
+    console.warn('Try it: no buttons, because the OpenAPI document could not be read: '
+      + error.message + '.');
   });
 })();

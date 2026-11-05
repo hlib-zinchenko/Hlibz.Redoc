@@ -155,6 +155,7 @@ internal sealed class ReDocSite
         ReDocToolbarSpot itemsSpot = ReDocPage.SpotOf(options.ToolbarItemsPlacement);
 
         List<ReDocSitePage> pages = [];
+        SortedSet<string> specOrigins = new(StringComparer.Ordinal);
         foreach (ReDocDocumentPage page in plan.Pages)
         {
             // Only worth a picker when that page has somewhere to go.
@@ -187,6 +188,10 @@ internal sealed class ReDocSite
                 : null;
 
             string specUrl = spec is null ? plan.SpecUrlOf(page.Document) : ReDocPage.SpecFileName;
+            if (CrossOriginSource(specUrl) is { } origin)
+            {
+                specOrigins.Add(origin);
+            }
 
             pages.Add(new ReDocSitePage(
                 page.Route,
@@ -223,7 +228,7 @@ internal sealed class ReDocSite
             pages,
             bundleRoute,
             plan.Redirect,
-            PolicyFor(options),
+            PolicyFor(options, specOrigins),
             options.RememberLastDocument
                 ? new ReDocLastDocument(pages, prefix.Length == 0 ? string.Empty : $"/{prefix}")
                 : null);
@@ -236,11 +241,55 @@ internal sealed class ReDocSite
     /// <c>script-src 'self'</c> is the defence that keeps one off the page. A policy the caller set
     /// here, or one their own middleware put on the response, still wins.
     /// </summary>
-    private static string? PolicyFor(ReDocDocumentsOptions options) =>
-        options.ContentSecurityPolicy
-        ?? (options.TryIt is { CredentialStorage: not ReDocTryItCredentialStorage.Memory }
-            ? ReDocDocumentsOptions.DefaultContentSecurityPolicy
-            : null);
+    /// <remarks>
+    /// The default allows <c>connect-src 'self'</c> only, so imposed as it stands it would block
+    /// ReDoc's own fetch of a spec on another origin and blank a page that worked before the
+    /// console was turned on. Those origins are known here, so they are added. A <c>servers</c>
+    /// entry on another origin is not: the spec is read in the browser, and the README says to set
+    /// <see cref="ReDocDocumentsOptions.ContentSecurityPolicy"/> for it.
+    /// </remarks>
+    private static string? PolicyFor(
+        ReDocDocumentsOptions options, IReadOnlyCollection<string> specOrigins)
+    {
+        if (options.ContentSecurityPolicy is not null)
+        {
+            return options.ContentSecurityPolicy;
+        }
+
+        if (options.TryIt is not { CredentialStorage: not ReDocTryItCredentialStorage.Memory })
+        {
+            return null;
+        }
+
+        string policy = ReDocDocumentsOptions.DefaultContentSecurityPolicy;
+        return specOrigins.Count == 0
+            ? policy
+            : policy.Replace(
+                "connect-src 'self'",
+                $"connect-src 'self' {string.Join(' ', specOrigins)}",
+                StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The CSP source a spec URL on another origin needs, or <see langword="null"/> for a relative
+    /// one. A protocol-relative URL becomes a bare host, which CSP matches on the page's own
+    /// scheme — the same scheme the URL itself would use.
+    /// </summary>
+    internal static string? CrossOriginSource(string specUrl)
+    {
+        if (specUrl.StartsWith("//", StringComparison.Ordinal))
+        {
+            return Uri.TryCreate("https:" + specUrl, UriKind.Absolute, out Uri? relative)
+                ? relative.Authority
+                : null;
+        }
+
+        // Scheme checked rather than trusted: on Unix a rooted path parses as an absolute file URI.
+        return Uri.TryCreate(specUrl, UriKind.Absolute, out Uri? uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+                ? uri.GetLeftPart(UriPartial.Authority)
+                : null;
+    }
 
     /// <summary>
     /// Why a document can't serve its own spec, named as the thing the caller has to fix. Thrown

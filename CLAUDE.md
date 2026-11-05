@@ -244,11 +244,13 @@ takes one project at a time.
     - Credentials are in memory by default; `CredentialStorage` (`Session`/`Local`) puts them in
       `sessionStorage` or `localStorage` under **one key per app** (the app base's path), not per
       spec, so the picker's documents share them — keyed by scheme name inside. They are re-read
-      on every drawer open, so another tab's save shows up — and dropped there once past
+      on every drawer open, so another tab's save or Forget shows up (unless a write has failed,
+      after which memory is the only copy) — and dropped there once past
       `CredentialLifetime` (default 8 h, sliding from the last change, `null` = never), stored as
       `{ expires, credentials }`. Storing them makes `ReDocSite.PolicyFor` fall back to
       `DefaultContentSecurityPolicy` when no policy was set: a stored secret is what an injected
-      script would come for. Encryption at rest was considered and rejected — the page must
+      script would come for. Any spec URL on another origin is added to its `connect-src`, or the
+      imposed policy would blank a page that worked without one. Encryption at rest was considered and rejected — the page must
       decrypt without asking, so the key sits beside the ciphertext. Everything from the spec or a
       response goes in through `textContent`.
     - Drafts (what was typed per operation, plus the last *finished* response's DOM nodes) live
@@ -256,7 +258,10 @@ takes one project at a time.
       dialog's `close` event, which is queued: in the browser pane it once landed after the next
       `open()` had run, losing the draft. The `close` handler drops out when the dialog is open
       again for the same reason. Responses
-      are read as bytes, not text, so a binary one can be offered as a download. Two traps:
+      are read as bytes, not text, so a binary one can be offered as a download. A JSON response
+      goes through the script's own `parseJson`, not `JSON.parse`, which keeps numbers as their
+      source text: a 64-bit id would otherwise be shown, and copied, rounded. The spec, by
+      contrast, is read with `JSON.parse` and must be JSON — YAML gets no buttons. Two traps:
       `replaceChildren` writes a `null` argument out as the text "null" where `h()` skips it, and
       `.hlibz-tryit [hidden]` covers the whole console for the same reason as the picker's rule.
     - What the C# suite can't reach is the script's behaviour; `ReDocTryItTests` covers the

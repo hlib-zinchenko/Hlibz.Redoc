@@ -496,10 +496,10 @@ the page reloads; **Reset to example** puts the generated body back.
   **Cancel** stops a request that is taking too long.
 - **Copy as cURL**: the same request as a `curl` command line, with the credentials typed into the
   panel. The browser's cookies aren't included, so an API using cookie auth needs them added.
-
 - **Auth**: bearer tokens, HTTP Basic, and API keys in a header or the query string. OAuth 2.0 and
   OpenID Connect schemes take a pasted access token; there is no login flow yet. A token is entered
-  once per security scheme and covers every operation on the page. Secret fields have an eye button
+  once per security scheme and covers every operation on the page. Cookie parameters get no field —
+  a browser doesn't let a page set them — so the panel lists them instead. Secret fields have an eye button
   to show what was typed.
 - **Remembering credentials**: by default they stay in memory, gone on a reload or a switch to
   another document. `CredentialStorage` keeps them in the browser instead, once for the whole app,
@@ -529,13 +529,16 @@ the page reloads; **Reset to example** puts the generated body back.
   Stored credentials can be read by any script running on this origin. So storing them turns on
   `DefaultContentSecurityPolicy` for the pages unless you set `ContentSecurityPolicy` or your own
   middleware sends a policy — `script-src 'self'` is what keeps an injected script off the page.
+  A spec URL on another origin is added to that policy's `connect-src` for you; a `servers` entry
+  on another origin is not, so set `ContentSecurityPolicy` yourself if requests go there.
   Still, choose `Local` only for docs whose viewers expect their browser to remember a key, and
-  never for a production token someone might type on a shared machine. Encrypting the stored
-  value wouldn't change that: the page has to decrypt it without asking, so the key sits beside it.
+  never for a production token someone might type on a shared machine.
 - **Bodies**: JSON, with an example built from the schema's `example`, `default` or `enum` values
   where it has them, and `application/x-www-form-urlencoded`, edited as one `name=value` per line.
   When a media type declares several named `examples`, a picker switches between them. Any other
   media type is sent as typed, with its declared `Content-Type`.
+- **Specs**: the console reads JSON OpenAPI documents only. A page whose spec is YAML still
+  renders, but gets no **Try it** buttons.
 - **Where requests go**: the spec's `servers`, or, if it declares none, the root of the app the
   pages are served from, `PathBase` included. Requests carry the viewer's cookies for this origin
   unless `SendCookies = false`, so an API using cookie auth works for a viewer who is already
@@ -556,8 +559,9 @@ Requests come from the viewer's browser. That has two consequences:
 - **Another origin has to allow it.** A server on another origin must answer CORS, and the page's
   `connect-src` must list it. The [default policy](#content-security-policy) allows this origin
   only.
-- **The requests are real.** A Send on `DELETE` deletes. Buttons for anything other than `GET` and
-  `HEAD` are colored as a warning, and that is the only guard.
+- **The requests are real.** A Send on `DELETE` deletes. The Send button is colored as a warning
+  for any method that isn't safe (`GET`, `HEAD`, `OPTIONS`, `TRACE`, `QUERY`), and sends on the
+  first click. To keep those buttons off the page entirely, use `SafeMethodsOnly`.
 
 Like everything else on the page, the console is served as its own files, so it needs no nonce and
 no `'unsafe-inline'` in `script-src`. It hooks into ReDoc 3.0.1's markup, which is not a public
@@ -786,12 +790,13 @@ Two things worth knowing:
 | Page renders, picker never appears in the sidebar | ReDoc's bundle didn't boot | the strip falls back to sitting over the page; check the console |
 | An endpoint shows up in every document | it has no group name | `.WithGroupName(...)` |
 | "Try it" says the request was blocked | the server is on another origin | allow this origin with CORS there, and add it to `connect-src` |
+| No "Try it" buttons appear | the spec is YAML, or couldn't be fetched | the console reads JSON specs only; the browser console says which |
 
 ## What this doesn't do
 
 - It doesn't generate OpenAPI documents — `AddOpenApi()`, Swashbuckle or NSwag still does that.
-- The [try-it console](#try-it) has no OAuth login flow, multipart bodies, or file uploads yet;
-  those are the next additions.
+- The [try-it console](#try-it) has no OAuth login flow, multipart bodies, file uploads or YAML
+  specs yet; the first three are the next additions.
 - No dark *theme* of its own beyond the palettes: ReDoc 3's own dark mode is the thing being
   configured here.
 - Hiding or gating a documentation page is not API security. The endpoints a document describes need
