@@ -155,6 +155,7 @@ internal sealed class ReDocSite
         ReDocToolbarSpot itemsSpot = ReDocPage.SpotOf(options.ToolbarItemsPlacement);
 
         List<ReDocSitePage> pages = [];
+        SortedSet<string> specOrigins = new(StringComparer.Ordinal);
         foreach (ReDocDocumentPage page in plan.Pages)
         {
             // Only worth a picker when that page has somewhere to go.
@@ -186,15 +187,27 @@ internal sealed class ReDocSite
                     ?? throw SpecUnavailable(page, specsBecause)
                 : null;
 
+            string specUrl = spec is null ? plan.SpecUrlOf(page.Document) : ReDocPage.SpecFileName;
+            if (CrossOriginSource(specUrl) is { } origin)
+            {
+                specOrigins.Add(origin);
+            }
+
             pages.Add(new ReDocSitePage(
                 page.Route,
                 page.Document.Name,
                 ReDocPage.Html(
-                    plan.DocumentTitleOf(page.Document), options, withPicker, withToolbarItems),
+                    plan.DocumentTitleOf(page.Document),
+                    options,
+                    withPicker,
+                    withToolbarItems,
+                    options.TryIt is { } tryIt
+                        ? ReDocTryIt.Tag(specUrl, page.Route, tryIt)
+                        : null),
                 css,
                 ReDocPage.InitScript(
                     ReDocRelativePath.Between(page.Route, bundleRoute),
-                    spec is null ? plan.SpecUrlOf(page.Document) : ReDocPage.SpecFileName,
+                    specUrl,
                     configJson),
                 colorModeScript,
                 withPicker
@@ -207,17 +220,75 @@ internal sealed class ReDocSite
                     : null,
                 page.Document.Unlisted,
                 spec,
-                policies));
+                policies,
+                options.TryIt is not null));
         }
 
         return new ReDocSite(
             pages,
             bundleRoute,
             plan.Redirect,
-            options.ContentSecurityPolicy,
+            PolicyFor(options, specOrigins),
             options.RememberLastDocument
                 ? new ReDocLastDocument(pages, prefix.Length == 0 ? string.Empty : $"/{prefix}")
                 : null);
+    }
+
+    /// <summary>
+    /// The policy the pages are sent with. A try-it console that keeps credentials in browser
+    /// storage gets <see cref="ReDocDocumentsOptions.DefaultContentSecurityPolicy"/> when nothing
+    /// else was set: a stored secret is exactly what an injected script would come for, and
+    /// <c>script-src 'self'</c> is the defence that keeps one off the page. A policy the caller set
+    /// here, or one their own middleware put on the response, still wins.
+    /// </summary>
+    /// <remarks>
+    /// The default allows <c>connect-src 'self'</c> only, so imposed as it stands it would block
+    /// ReDoc's own fetch of a spec on another origin and blank a page that worked before the
+    /// console was turned on. Those origins are known here, so they are added. A <c>servers</c>
+    /// entry on another origin is not: the spec is read in the browser, and the README says to set
+    /// <see cref="ReDocDocumentsOptions.ContentSecurityPolicy"/> for it.
+    /// </remarks>
+    private static string? PolicyFor(
+        ReDocDocumentsOptions options, IReadOnlyCollection<string> specOrigins)
+    {
+        if (options.ContentSecurityPolicy is not null)
+        {
+            return options.ContentSecurityPolicy;
+        }
+
+        if (options.TryIt is not { CredentialStorage: not ReDocTryItCredentialStorage.Memory })
+        {
+            return null;
+        }
+
+        string policy = ReDocDocumentsOptions.DefaultContentSecurityPolicy;
+        return specOrigins.Count == 0
+            ? policy
+            : policy.Replace(
+                "connect-src 'self'",
+                $"connect-src 'self' {string.Join(' ', specOrigins)}",
+                StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// The CSP source a spec URL on another origin needs, or <see langword="null"/> for a relative
+    /// one. A protocol-relative URL becomes a bare host, which CSP matches on the page's own
+    /// scheme — the same scheme the URL itself would use.
+    /// </summary>
+    internal static string? CrossOriginSource(string specUrl)
+    {
+        if (specUrl.StartsWith("//", StringComparison.Ordinal))
+        {
+            return Uri.TryCreate("https:" + specUrl, UriKind.Absolute, out Uri? relative)
+                ? relative.Authority
+                : null;
+        }
+
+        // Scheme checked rather than trusted: on Unix a rooted path parses as an absolute file URI.
+        return Uri.TryCreate(specUrl, UriKind.Absolute, out Uri? uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+                ? uri.GetLeftPart(UriPartial.Authority)
+                : null;
     }
 
     /// <summary>
@@ -291,6 +362,8 @@ internal sealed class ReDocSite
                     ReDocAssets.Write(context, page.ToolbarScript, "text/javascript"),
                 ReDocPage.SpecFileName when page.Spec is not null =>
                     ReDocAssets.WriteSpec(context, page.Spec),
+                ReDocTryIt.FileName when page.TryIt =>
+                    ReDocAssets.Write(context, ReDocTryIt.Script, "text/javascript"),
                 _ => next(context),
             };
         }
@@ -311,7 +384,8 @@ internal sealed record ReDocSitePage(
     string? ToolbarScript,
     bool Unlisted,
     OpenApiSpecSource? Spec,
-    IReadOnlyList<string>? Policies)
+    IReadOnlyList<string>? Policies,
+    bool TryIt = false)
 {
     /// <summary>
     /// The last segment of the route, which is what the page's own folder is called — the target

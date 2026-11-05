@@ -96,6 +96,13 @@ app.MapReDocDocuments(
         // "supply" finds both documents in that group without either being named for it.
         options.SearchablePicker = true;
 
+        // A "Try it" button on every operation. The widget catalog's write operations want a
+        // bearer token (any will do here), so the console's auth block has something to send.
+        // Requests stay on this origin, which the policy above already allows. A typed token is
+        // kept in the browser, so it survives a reload and a switch to another document.
+        options.EnableTryIt(
+            tryIt => tryIt.CredentialStorage = ReDocTryItCredentialStorage.Local);
+
         // A toolbar button beside the picker, and the prefix sending you back to whichever
         // document you were last reading.
         options.AddToolbarItem("Sample source", "https://github.com/hlib-zinchenko/Hlibz.Redoc", newTab: true);

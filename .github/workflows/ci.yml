@@ -42,6 +42,11 @@ jobs:
       - name: Test our host
         run: dotnet test --project tests/Hlibz.Redoc.AspNetCore.Tests --no-build --configuration Release
 
+      # The try-it console's script, which no C# assertion reaches, driven in the Chrome the
+      # runner image already has, so nothing is downloaded.
+      - name: Test the try-it console in a browser
+        run: dotnet test --project tests/Hlibz.Redoc.AspNetCore.BrowserTests --no-build --configuration Release
+
       - name: Pack
         run: |
           dotnet pack src/Hlibz.Redoc.Extensions.Core --no-build --configuration Release --output ./artifacts

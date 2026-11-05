@@ -280,6 +280,31 @@ public sealed class ReDocDocumentsOptions : ReDocDocumentsOptionsBase
     }
 
     /// <summary>
+    /// The try-it console's settings, or <see langword="null"/> while it is off. Off by default;
+    /// <see cref="EnableTryIt"/> turns it on.
+    /// </summary>
+    public ReDocTryItOptions? TryIt { get; private set; }
+
+    /// <summary>
+    /// Adds a "Try it" button to every operation. It opens a console that sends the request from
+    /// the viewer's browser. See <see cref="ReDocTryItOptions"/> for what it supports.
+    /// </summary>
+    /// <param name="configure">Optional settings for the console.</param>
+    /// <returns>These options, for chaining.</returns>
+    /// <remarks>
+    /// Like everything else on the page, the console is served as files, so a strict
+    /// <c>Content-Security-Policy</c> still needs no nonce. It sends requests to this origin by
+    /// default. Calling this again keeps the earlier settings and applies
+    /// <paramref name="configure"/> on top of them.
+    /// </remarks>
+    public ReDocDocumentsOptions EnableTryIt(Action<ReDocTryItOptions>? configure = null)
+    {
+        TryIt ??= new ReDocTryItOptions();
+        configure?.Invoke(TryIt);
+        return this;
+    }
+
+    /// <summary>
     /// Whether the page carries print styles. Defaults to <see langword="true"/>.
     /// </summary>
     /// <remarks>

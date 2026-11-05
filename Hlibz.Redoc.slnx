@@ -12,6 +12,7 @@
     <Project Path="src/Hlibz.Redoc.Extensions.Swashbuckle/Hlibz.Redoc.Extensions.Swashbuckle.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Hlibz.Redoc.AspNetCore.BrowserTests/Hlibz.Redoc.AspNetCore.BrowserTests.csproj" />
     <Project Path="tests/Hlibz.Redoc.AspNetCore.Tests/Hlibz.Redoc.AspNetCore.Tests.csproj" />
     <Project Path="tests/Hlibz.Redoc.Extensions.Core.Tests/Hlibz.Redoc.Extensions.Core.Tests.csproj" />
     <Project Path="tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests.csproj" />

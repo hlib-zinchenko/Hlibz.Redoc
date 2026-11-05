@@ -51,11 +51,13 @@ one adapter is the supported case; don't "fix" this by renaming types apart.
 # Build everything
 dotnet build
 
-# Run the tests — four suites: core, the shared conformance source per adapter, then our host
+# Run the tests — five suites: core, the shared conformance source per adapter, our host, then
+# the try-it console in a browser (system Chrome, else Playwright's Chromium is installed)
 dotnet test --project tests/Hlibz.Redoc.Extensions.Core.Tests
 dotnet test --project tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests
 dotnet test --project tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests
 dotnet test --project tests/Hlibz.Redoc.AspNetCore.Tests
+dotnet test --project tests/Hlibz.Redoc.AspNetCore.BrowserTests
 
 # Run the sample apps (each opens /api-docs automatically, see launchSettings.json)
 dotnet run --project samples/Sample.RedocAspNetCore   # :5299
@@ -224,6 +226,55 @@ takes one project at a time.
       the moment it is built, covering its own pill, so the filter box is what you click, `open`
       never runs, and nothing it attaches — positioning, Escape, outside-click — exists.
       It shipped that way once, caught in the sample rather than by a test.
+  - `EnableTryIt()` (`ReDocTryItOptions`, `ReDocTryIt`) is the try-it console, off by default.
+    `TRY-IT.md` is the investigation behind it. The script and CSS are **real files**,
+    `assets/redoc-tryit.js` and `.css`, embedded and read once. The script is the same on every
+    page; what varies per page (spec URL, app base as `../` per route segment) travels as `data-`
+    attributes on its `<script>` tag, so nothing is inline. It is served beside each page, inside
+    that document's group, so a gated document's console is gated with it.
+    - It hangs off ReDoc 3's DOM, measured on 3.0.1: one
+      `[data-item-kind="httpItem"][data-section-id]` per operation, whose id ends
+      `/paths/{JSON pointer}/{method}` — the last `/paths/`, since the pointer escapes every `/` —
+      and a `[data-testid="page-actions"]` inside it, where the button is prepended. ReDoc renders
+      sections only near the viewport, so a `MutationObserver` keeps mounting. Batch that on a
+      **timer, not `requestAnimationFrame`**: a background tab runs no frames, and a section React
+      re-rendered there sat without its button.
+    - The console is a `<dialog>` of our own outside React's tree, reading the spec itself, never
+      ReDoc's state. Auth schemes and body media types go through two registries in the script
+      (`registerAuth`, `registerBody`); adding one is an entry, not a rewrite. They are internal
+      on purpose — no `window` API until they have settled.
+    - Credentials are in memory by default; `CredentialStorage` (`Session`/`Local`) puts them in
+      `sessionStorage` or `localStorage` under **one key per app** (the app base's path), not per
+      spec, so the picker's documents share them — keyed by scheme name inside. They are re-read
+      on every drawer open, so another tab's save or Forget shows up (unless a write has failed,
+      after which memory is the only copy) — and dropped there once past
+      `CredentialLifetime` (default 8 h, sliding from the last change, `null` = never), stored as
+      `{ expires, credentials }`. Storing them makes `ReDocSite.PolicyFor` fall back to
+      `DefaultContentSecurityPolicy` when no policy was set: a stored secret is what an injected
+      script would come for. Any spec URL on another origin is added to its `connect-src`, or the
+      imposed policy would blank a page that worked without one. Encryption at rest was considered and rejected — the page must
+      decrypt without asking, so the key sits beside the ciphertext. Everything from the spec or a
+      response goes in through `textContent`.
+    - Drafts (what was typed per operation, plus the last *finished* response's DOM nodes) live
+      in memory and are saved by `open()` for the panel it is about to replace — **not** on the
+      dialog's `close` event, which is queued: in the browser pane it once landed after the next
+      `open()` had run, losing the draft. The `close` handler drops out when the dialog is open
+      again for the same reason. Responses
+      are read as bytes, not text, so a binary one can be offered as a download. A JSON response
+      goes through the script's own `parseJson`, not `JSON.parse`, which keeps numbers as their
+      source text: a 64-bit id would otherwise be shown, and copied, rounded. The spec, by
+      contrast, is read with `JSON.parse` and must be JSON — YAML gets no buttons. Two traps:
+      `replaceChildren` writes a `null` argument out as the text "null" where `h()` skips it, and
+      `.hlibz-tryit [hidden]` covers the whole console for the same reason as the picker's rule.
+    - Multipart bodies are FormData, so `buildRequest` must **not** set `Content-Type` for them:
+      only the browser knows the boundary. A file picker can't be refilled, so a draft keeps the
+      `<input type=file>` elements themselves and the next panel reuses them. `fetch` follows
+      redirects silently; a redirected response says where to and skips the documented-status
+      match, which would otherwise vouch for a sign-in page's `200`.
+    - `ReDocTryItTests` covers the server half only; the script's behaviour is
+      `tests/Hlibz.Redoc.AspNetCore.BrowserTests` (Playwright, a smoke test of the paths a person
+      checks by hand). It finds operations by anchor, so it reads the tag's slug off the sidebar
+      rather than assuming one. Something it doesn't cover still wants `Sample.Own` open.
   - `PickerPlacement` and `ToolbarItemsPlacement` (`ReDocToolbarPlacement`: `TopRight`,
     `BottomRight`, `Sidebar`) place the picker and the links **independently**. The mechanism is
     one container per spot, found by that spot's own class: matching placements resolve to the
@@ -350,7 +401,10 @@ takes one project at a time.
     `GenerateAsync`. The provider's *own* spelling of the name is what gets passed back to it
     (matching is case-insensitive, Swashbuckle's lookup is not), and the document is buffered
     rather than streamed so a generator that throws half-way produces a 500 rather than a 200
-    carrying half a document.
+    carrying half a document. The buffer is a `StringWriter` on the **invariant culture**: the
+    document writer formats numbers through `TextWriter.Write(decimal)`, so on a server whose
+    culture writes a decimal comma, `129.99` came out as `129,99` and the whole spec stopped being
+    JSON. Integers are unaffected, which is why nothing showed it until the sample grew a price.
   - `OpenApiDocumentNames` (internal) backs `ReDocDocumentsOptionsBase.ValidateDocumentNames` (on by
     default): a configured name that isn't a registered OpenAPI document throws at startup instead
     of serving a page whose spec 404s. It resolves the *internal*
@@ -375,6 +429,8 @@ takes one project at a time.
     identifying its container by that spot's class — which is what lets one page carry several
     strips and each script find only its own.
 - `samples/Sample.Shared/` — the four OpenAPI documents (the fourth, `internal`, is what the samples mark `Unlisted` and `Sample.Own` gates) and the endpoints behind them,
+  with the widget catalog's POST/PUT/DELETE behind `RequireSampleToken()` (any non-empty bearer
+  token; declared as a `bearer` scheme on just those operations) so the try-it console has auth to send,
   `AddSampleDocuments()` / `MapSampleEndpoints()`, so every sample renders the *same* spec and the
   samples can be run together and compared. Each document is registered with `AddOpenApi(name)` and
   each endpoint tagged with `.WithGroupName(name)`, because untagged endpoints land in every
@@ -384,7 +440,13 @@ takes one project at a time.
   surface ReDoc's alternating nested-schema background bug, every `widgets` endpoint documents a
   `500` response alongside its own negative response (`400`/`404`) with a distinct model to check
   multiple response-schema/status-tab combinations render correctly, and every property carries a
-  `[Description]` so field descriptions are visible everywhere. It's a plain `Microsoft.NET.Sdk`
+  `[Description]` so field descriptions are visible everywhere. `POST /widgets` carries three
+  named request examples (two accepted, one the 400 for a zero price), for ReDoc's example
+  dropdown and the try-it console's picker. `POST /widgets/{id}/reviews` (a form, offered as both
+  urlencoded and multipart) and `POST /widgets/{id}/photos` (an `IFormFile` upload) are there for
+  the console's form editors, with named examples too. `WidgetReview` is a class with properties,
+  not a positional record: form binding requires every constructor parameter, even a nullable or
+  defaulted one, and answers a bare 400. It's a plain `Microsoft.NET.Sdk`
   library, so the minimal-API extension methods the web-SDK samples get implicitly are imported by
   hand.
 - `samples/Sample.Own/` (:5499) — the same shared documents on our own host. Its `Program.cs` sets
@@ -436,6 +498,11 @@ takes one project at a time.
   on port 0 (`ReDocTestApp`) because **endpoint routing matches nothing in a hand-built
   pipeline** — `((IApplicationBuilder)app).Build()` off a `WebApplication` 404s every mapped
   route, which is why the adapters' middleware-based harness couldn't be reused.
+- `tests/Hlibz.Redoc.AspNetCore.BrowserTests/` — the try-it console in a real browser
+  (Microsoft.Playwright), against the samples' own endpoints plus one that redirects. Its own
+  project so the host suite still runs where there is no browser. Chrome is launched through the
+  `chrome` channel; only if that fails is Playwright's Chromium installed, via
+  `Microsoft.Playwright.Program.Main`, which needs no PowerShell.
 - `tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests/` and
   `tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests/` — the conformance source plus that one alias
   file, nothing else. Both override `TargetFramework` to `net10.0` and reference

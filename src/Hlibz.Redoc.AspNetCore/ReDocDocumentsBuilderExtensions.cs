@@ -104,6 +104,15 @@ public static class ReDocDocumentsBuilderExtensions
                     context => ReDocAssets.Write(context, toolbar, "text/javascript")));
             }
 
+            // Per page rather than once under _redoc/: a page's own group is what a policy on one
+            // document covers, and the script reads that document's spec.
+            if (current.TryIt)
+            {
+                own.Add(endpoints.MapGet(
+                    $"{route}/{ReDocTryIt.FileName}",
+                    context => ReDocAssets.Write(context, ReDocTryIt.Script, "text/javascript")));
+            }
+
             added.AddRange(own);
             ReDocDocumentsConventionBuilder.Group group = new(own);
 

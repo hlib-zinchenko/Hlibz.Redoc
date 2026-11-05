@@ -1,0 +1,1839 @@
+// Try-it console for ReDoc 3, served by Hlibz.Redoc.AspNetCore when EnableTryIt() is on.
+//
+// It never touches ReDoc's React state. It reads the spec itself, mounts a "Try it" button into
+// each operation's page-actions, and opens a <dialog> of its own. The DOM contract it relies on
+// is ReDoc 3's: [data-item-kind="httpItem"][data-section-id] per operation, whose id ends in
+// /paths/{JSON-pointer path}/{method}, and [data-testid="page-actions"] inside it. Measured on
+// 3.0.1; TRY-IT.md has the details.
+//
+// Auth schemes and request bodies are handled through two small registries (auth, bodies), which
+// is how other schemes and media types get added without touching anything else.
+//
+// Everything that reaches the page goes through textContent or setAttribute, never innerHTML:
+// the spec and the response are both data, and the response is attacker-influenced.
+
+(function () {
+  'use strict';
+
+  var self = document.querySelector('script[data-hlibz-tryit]');
+  if (!self) {
+    return;
+  }
+
+  var config = {
+    specUrl: self.getAttribute('data-spec-url'),
+    appBase: new URL(self.getAttribute('data-app-base') || './', location.href).href,
+    storage: self.getAttribute('data-credential-storage'),
+    // Seconds stored credentials last after they were last typed; absent means until forgotten.
+    lifetime: Number(self.getAttribute('data-credential-lifetime')) || 0,
+    cookies: self.getAttribute('data-send-cookies') !== 'false',
+    safeOnly: self.getAttribute('data-safe-methods-only') === 'true',
+  };
+
+  var METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace', 'query'];
+  // Safe in RFC 9110's sense (QUERY by its draft): a request that asks, never one that changes.
+  var SAFE_METHODS = ['get', 'head', 'options', 'trace', 'query'];
+  // One key for the whole app, not one per page, so what a viewer typed on one document is there
+  // on every other document the picker leads to.
+  var STORAGE_KEY = 'hlibz.tryit.credentials:' + new URL(config.appBase).pathname;
+
+  // ---------------------------------------------------------------------------------------------
+  // Small helpers
+
+  function h(tag, attrs) {
+    var node = document.createElement(tag);
+    if (attrs) {
+      Object.keys(attrs).forEach(function (key) {
+        var value = attrs[key];
+        if (value === undefined || value === null || value === false) {
+          return;
+        }
+        if (key === 'text') {
+          node.textContent = value;
+        } else if (key.slice(0, 2) === 'on') {
+          node.addEventListener(key.slice(2), value);
+        } else {
+          node.setAttribute(key, value === true ? '' : String(value));
+        }
+      });
+    }
+    for (var i = 2; i < arguments.length; i++) {
+      var child = arguments[i];
+      if (child === null || child === undefined || child === false) {
+        continue;
+      }
+      (Array.isArray(child) ? child : [child]).forEach(function (c) {
+        if (c !== null && c !== undefined && c !== false) {
+          node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+        }
+      });
+    }
+    return node;
+  }
+
+  function unescapePointer(segment) {
+    return segment.replace(/~1/g, '/').replace(/~0/g, '~');
+  }
+
+  // The section id ReDoc gives an operation: /{tag-slug}/paths/{pointer}/{method}. The pointer
+  // has every '/' escaped, so the last '/paths/' is the one that starts it.
+  function parseSectionId(id) {
+    var at = id.lastIndexOf('/paths/');
+    if (at < 0) {
+      return null;
+    }
+    var rest = id.slice(at + '/paths/'.length);
+    var cut = rest.lastIndexOf('/');
+    if (cut < 0) {
+      return null;
+    }
+    var method = rest.slice(cut + 1).toLowerCase();
+    if (METHODS.indexOf(method) < 0) {
+      return null;
+    }
+    var pointer = rest.slice(0, cut);
+    try {
+      pointer = decodeURIComponent(pointer);
+    } catch (e) { /* already decoded */ }
+    return { path: unescapePointer(pointer), method: method };
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The spec, and local $ref resolution
+
+  var spec = null;
+
+  function resolvePointer(ref) {
+    if (typeof ref !== 'string' || ref.slice(0, 2) !== '#/') {
+      return undefined;
+    }
+    return ref.slice(2).split('/').reduce(function (node, part) {
+      return node == null ? undefined : node[unescapePointer(decodeURIComponent(part))];
+    }, spec);
+  }
+
+  function deref(node) {
+    var guard = 0;
+    while (node && typeof node === 'object' && typeof node.$ref === 'string' && guard++ < 32) {
+      var target = resolvePointer(node.$ref);
+      if (target === undefined) {
+        return {};
+      }
+      node = target;
+    }
+    return node;
+  }
+
+  function operationFor(path, method) {
+    var item = spec && spec.paths && deref(spec.paths[path]);
+    var op = item && item[method];
+    if (!op) {
+      return null;
+    }
+
+    // Path-level parameters apply unless the operation redefines the same name and location.
+    var params = [];
+    var seen = {};
+    (op.parameters || []).concat(item.parameters || []).forEach(function (p) {
+      p = deref(p);
+      var key = p.in + ':' + p.name;
+      if (!seen[key]) {
+        seen[key] = true;
+        params.push(p);
+      }
+    });
+
+    return { path: path, method: method, op: op, params: params };
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Example values from a schema. Deliberately simple: the first of every choice, and readOnly
+  // properties left out, since this is a request.
+
+  var FORMAT_EXAMPLES = {
+    uuid: '3fa85f64-5717-4562-b3fc-2c963f66afa6',
+    'date-time': new Date().toISOString(),
+    date: new Date().toISOString().slice(0, 10),
+    time: '12:00:00',
+    email: 'user@example.com',
+    uri: 'https://example.com',
+    url: 'https://example.com',
+    hostname: 'example.com',
+    ipv4: '192.0.2.1',
+    ipv6: '2001:db8::1',
+  };
+
+  function sampleOf(schema, depth, seen) {
+    depth = depth || 0;
+    seen = seen || [];
+    if (!schema || depth > 8) {
+      return undefined;
+    }
+    if (schema.$ref) {
+      if (seen.indexOf(schema.$ref) >= 0) {
+        return undefined;
+      }
+      seen = seen.concat(schema.$ref);
+      schema = deref(schema);
+      if (!schema) {
+        return undefined;
+      }
+    }
+
+    if (schema.example !== undefined) {
+      return schema.example;
+    }
+    if (Array.isArray(schema.examples) && schema.examples.length) {
+      return schema.examples[0];
+    }
+    if (schema.default !== undefined) {
+      return schema.default;
+    }
+    if (schema.const !== undefined) {
+      return schema.const;
+    }
+    if (Array.isArray(schema.enum) && schema.enum.length) {
+      return schema.enum[0];
+    }
+
+    if (Array.isArray(schema.allOf) && schema.allOf.length) {
+      var merged = {};
+      var any = false;
+      schema.allOf.forEach(function (part) {
+        var value = sampleOf(part, depth + 1, seen);
+        if (value && typeof value === 'object' && !Array.isArray(value)) {
+          Object.assign(merged, value);
+          any = true;
+        } else if (value !== undefined && !any) {
+          merged = value;
+        }
+      });
+      if (schema.properties) {
+        Object.assign(merged, sampleOf(
+          Object.assign({}, schema, { allOf: undefined }), depth + 1, seen));
+      }
+      return merged;
+    }
+
+    var choice = schema.oneOf || schema.anyOf;
+    if (Array.isArray(choice) && choice.length) {
+      var notNull = choice.filter(function (c) { return deref(c).type !== 'null'; });
+      return sampleOf((notNull.length ? notNull : choice)[0], depth + 1, seen);
+    }
+
+    var type = schema.type;
+    if (Array.isArray(type)) {
+      type = type.filter(function (t) { return t !== 'null'; })[0] || 'null';
+    }
+    if (!type) {
+      type = schema.properties ? 'object' : schema.items ? 'array' : undefined;
+    }
+
+    switch (type) {
+      case 'object': {
+        var result = {};
+        var props = schema.properties || {};
+        Object.keys(props).forEach(function (name) {
+          var prop = deref(props[name]);
+          if (prop && prop.readOnly) {
+            return;
+          }
+          var value = sampleOf(props[name], depth + 1, seen);
+          if (value !== undefined) {
+            result[name] = value;
+          }
+        });
+        return result;
+      }
+      case 'array': {
+        var item = sampleOf(schema.items, depth + 1, seen);
+        return item === undefined ? [] : [item];
+      }
+      case 'string':
+        return FORMAT_EXAMPLES[schema.format] || 'string';
+      case 'integer':
+      case 'number':
+        return typeof schema.minimum === 'number' ? schema.minimum : 0;
+      case 'boolean':
+        return true;
+      case 'null':
+        return null;
+      default:
+        return undefined;
+    }
+  }
+
+  // The named examples a media type or parameter declares that carry a value inline, in order, as
+  // { key, label }. One that points at an externalValue is left out: fetching it is another
+  // origin's business and another CSP hole.
+  function namedExamples(holder) {
+    var examples = holder && holder.examples;
+    if (!examples || typeof examples !== 'object' || Array.isArray(examples)) {
+      return [];
+    }
+    return Object.keys(examples).filter(function (key) {
+      var ex = deref(examples[key]);
+      return ex && ex.value !== undefined;
+    }).map(function (key) {
+      var summary = deref(examples[key]).summary;
+      return { key: key, label: summary ? summary + ' (' + key + ')' : key };
+    });
+  }
+
+  // The example a media type entry declares — the named one asked for, else its example, else its
+  // first named one — before falling back to its schema.
+  function mediaExample(media, name) {
+    if (!media) {
+      return undefined;
+    }
+    var named = namedExamples(media);
+    var chosen = named.filter(function (n) { return n.key === name; })[0];
+    if (chosen) {
+      return deref(media.examples[chosen.key]).value;
+    }
+    if (media.example !== undefined) {
+      return media.example;
+    }
+    if (named.length) {
+      return deref(media.examples[named[0].key]).value;
+    }
+    return sampleOf(media.schema);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Auth registry. A handler declares the fields it needs and applies their values to a request
+  // under construction ({ headers: Headers, query: [[name, value]] }). The first handler whose
+  // `matches` accepts a security scheme handles it.
+
+  var authHandlers = [];
+
+  function registerAuth(handler) {
+    authHandlers.push(handler);
+  }
+
+  function bearer(req, values) {
+    if (values.token) {
+      req.headers.set('Authorization', 'Bearer ' + values.token.trim());
+    }
+  }
+
+  registerAuth({
+    matches: function (s) { return s.type === 'http' && /^bearer$/i.test(s.scheme || ''); },
+    describe: function (s) { return 'Bearer token' + (s.bearerFormat ? ' (' + s.bearerFormat + ')' : ''); },
+    fields: [{ name: 'token', label: 'Token', secret: true }],
+    apply: bearer,
+  });
+
+  registerAuth({
+    matches: function (s) { return s.type === 'http' && /^basic$/i.test(s.scheme || ''); },
+    describe: function () { return 'HTTP Basic'; },
+    fields: [
+      { name: 'username', label: 'Username' },
+      { name: 'password', label: 'Password', secret: true },
+    ],
+    apply: function (req, values) {
+      if (!values.username && !values.password) {
+        return;
+      }
+      var bytes = new TextEncoder().encode((values.username || '') + ':' + (values.password || ''));
+      var binary = '';
+      bytes.forEach(function (b) { binary += String.fromCharCode(b); });
+      req.headers.set('Authorization', 'Basic ' + btoa(binary));
+    },
+  });
+
+  registerAuth({
+    matches: function (s) { return s.type === 'apiKey' && (s.in === 'header' || s.in === 'query'); },
+    describe: function (s) { return 'API key, ' + s.in + ' "' + s.name + '"'; },
+    fields: [{ name: 'value', label: 'Value', secret: true }],
+    apply: function (req, values, s) {
+      if (!values.value) {
+        return;
+      }
+      if (s.in === 'header') {
+        req.headers.set(s.name, values.value);
+      } else {
+        req.query.push([s.name, values.value]);
+      }
+    },
+  });
+
+  // No OAuth2 or OpenID Connect flow yet; what they produce is a bearer token, so the viewer can
+  // paste one they already have.
+  registerAuth({
+    matches: function (s) { return s.type === 'oauth2' || s.type === 'openIdConnect'; },
+    describe: function (s) { return (s.type === 'oauth2' ? 'OAuth 2.0' : 'OpenID Connect') + ' — paste an access token'; },
+    fields: [{ name: 'token', label: 'Access token', secret: true }],
+    apply: bearer,
+  });
+
+  function authHandlerFor(scheme) {
+    for (var i = 0; i < authHandlers.length; i++) {
+      if (authHandlers[i].matches(scheme)) {
+        return authHandlers[i];
+      }
+    }
+    return null;
+  }
+
+  // Credentials are per security scheme, so one token covers every operation on the page. Kept in
+  // memory unless the site chose sessionStorage or localStorage.
+  function credentialStore() {
+    try {
+      return config.storage === 'local' ? localStorage
+        : config.storage === 'session' ? sessionStorage
+        : null;
+    } catch (e) {
+      return null; // storage blocked by the browser: memory only
+    }
+  }
+
+  var credentials = {};
+  // Set once a write fails (quota, blocked storage). From then on memory is the only copy, so a
+  // read that finds nothing must not wipe it.
+  var storageBroken = false;
+
+  // Stored as { expires, credentials }, expires being epoch milliseconds or null. Read again on
+  // every open, so another tab's change shows up here: a key saved there is picked up, and one
+  // forgotten or expired there is dropped from memory too, so an open page doesn't keep sending it.
+  function loadCredentials() {
+    var store = credentialStore();
+    if (!store || storageBroken) {
+      return;
+    }
+    var saved = null;
+    try {
+      saved = JSON.parse(store.getItem(STORAGE_KEY) || 'null');
+    } catch (e) { /* unreadable: treated as nothing saved */ }
+    if (!saved || typeof saved !== 'object' || !saved.credentials
+        || typeof saved.credentials !== 'object') {
+      credentials = {};
+      return;
+    }
+    if (typeof saved.expires === 'number' && saved.expires <= Date.now()) {
+      forgetCredentials();
+      return;
+    }
+    credentials = saved.credentials;
+  }
+
+  // Every change restarts the lifetime: it runs from when the viewer last typed.
+  function saveCredentials() {
+    var store = credentialStore();
+    if (!store) {
+      return;
+    }
+    try {
+      store.setItem(STORAGE_KEY, JSON.stringify({
+        expires: config.lifetime ? Date.now() + config.lifetime * 1000 : null,
+        credentials: credentials,
+      }));
+    } catch (e) {
+      storageBroken = true; // storage full or blocked: memory only from here on
+    }
+  }
+
+  function describeLifetime(seconds) {
+    var units = [[86400, 'day'], [3600, 'hour'], [60, 'minute'], [1, 'second']];
+    for (var i = 0; i < units.length; i++) {
+      if (seconds >= units[i][0] && seconds % units[i][0] === 0) {
+        var n = seconds / units[i][0];
+        return n + ' ' + units[i][1] + (n === 1 ? '' : 's');
+      }
+    }
+    return seconds + ' seconds';
+  }
+
+  function forgetCredentials() {
+    credentials = {};
+    var store = credentialStore();
+    if (store) {
+      try { store.removeItem(STORAGE_KEY); } catch (e) { /* nothing to remove */ }
+    }
+  }
+
+  loadCredentials();
+
+  // Every scheme any of the operation's requirements names. Values are applied for whichever the
+  // viewer filled in, which covers both "A or B" and "A and B" without asking them to pick.
+  function schemesFor(op) {
+    var requirements = op.security || spec.security || [];
+    var names = [];
+    requirements.forEach(function (req) {
+      Object.keys(req || {}).forEach(function (name) {
+        if (names.indexOf(name) < 0) {
+          names.push(name);
+        }
+      });
+    });
+    var defined = (spec.components && spec.components.securitySchemes) || {};
+    return names.map(function (name) {
+      var scheme = deref(defined[name]) || {};
+      return { name: name, scheme: scheme, handler: authHandlerFor(scheme) };
+    });
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Body registry. The first handler whose `matches` accepts a media type renders the editor's
+  // starting text and turns the edited text into a fetch body, or throws with a message.
+
+  var bodyHandlers = [];
+
+  function registerBody(handler) {
+    bodyHandlers.push(handler);
+  }
+
+  registerBody({
+    matches: function (type) { return /^application\/([\w.-]+\+)?json$/i.test(type); },
+    initial: function (media, exampleName) {
+      var example = mediaExample(media, exampleName);
+      return example === undefined ? '' : JSON.stringify(example, null, 2);
+    },
+    encode: function (text) {
+      if (text.trim() === '') {
+        return undefined;
+      }
+      JSON.parse(text);
+      return text;
+    },
+  });
+
+  // A form body is edited as one name=value per line, unencoded, which reads far better than the
+  // encoded wire form. An array becomes one line per item (form style, exploded: OpenAPI's default
+  // for a form field); a nested object goes as JSON, which is what most servers that accept one at
+  // all expect. Fields named in `skip` (a multipart body's files) are left out.
+  function formLines(example, skip) {
+    if (typeof example === 'string') {
+      // Already in wire form: shown decoded, one field per line.
+      return Array.from(new URLSearchParams(example)).map(function (pair) {
+        return pair[0] + '=' + pair[1];
+      }).join('\n');
+    }
+    if (!example || typeof example !== 'object' || Array.isArray(example)) {
+      return '';
+    }
+    var lines = [];
+    Object.keys(example).forEach(function (name) {
+      if (skip && skip.indexOf(name) >= 0) {
+        return;
+      }
+      [].concat(example[name]).forEach(function (value) {
+        lines.push(name + '=' + (value !== null && typeof value === 'object'
+          ? JSON.stringify(value) : String(value === null ? '' : value)));
+      });
+    });
+    return lines.join('\n');
+  }
+
+  // The edited lines back as [name, value] pairs. The name is trimmed, since stray indentation is
+  // never meant; the value is sent exactly.
+  function parseFormLines(text) {
+    var pairs = [];
+    text.split(/\r?\n/).forEach(function (line) {
+      if (line.trim() === '') {
+        return;
+      }
+      var at = line.indexOf('=');
+      var name = (at < 0 ? line : line.slice(0, at)).trim();
+      if (!name) {
+        throw new Error('"' + line.trim() + '" has no name before its "=".');
+      }
+      pairs.push([name, at < 0 ? '' : line.slice(at + 1)]);
+    });
+    return pairs;
+  }
+
+  registerBody({
+    matches: function (type) { return /^application\/x-www-form-urlencoded$/i.test(type); },
+    hint: 'One name=value per line. Values are URL-encoded when sent.',
+    initial: function (media, exampleName) {
+      return formLines(mediaExample(media, exampleName));
+    },
+    encode: function (text) {
+      var form = new URLSearchParams();
+      parseFormLines(text).forEach(function (pair) { form.append(pair[0], pair[1]); });
+      var encoded = form.toString();
+      return encoded === '' ? undefined : encoded;
+    },
+  });
+
+  // Every property a form's schema declares, through $ref and allOf (which is how ASP.NET Core
+  // describes a file beside other form fields), with whether it is required.
+  function formFields(schema, fields, depth) {
+    fields = fields || {};
+    schema = deref(schema);
+    if (!schema || typeof schema !== 'object' || (depth || 0) > 8) {
+      return fields;
+    }
+    var required = Array.isArray(schema.required) ? schema.required : [];
+    Object.keys(schema.properties || {}).forEach(function (name) {
+      fields[name] = { schema: deref(schema.properties[name]) || {}, required: false };
+    });
+    (schema.allOf || []).forEach(function (part) { formFields(part, fields, (depth || 0) + 1); });
+    required.forEach(function (name) {
+      if (fields[name]) {
+        fields[name].required = true;
+      }
+    });
+    return fields;
+  }
+
+  // A file part is a binary string (3.0) or a string with a contentMediaType (3.1); an array of
+  // either is several files under one name.
+  function isFileSchema(schema) {
+    schema = deref(schema) || {};
+    return [].concat(schema.type || []).indexOf('string') >= 0
+      && (schema.format === 'binary' || (!!schema.contentMediaType && !schema.contentEncoding));
+  }
+
+  function fileFieldsOf(media) {
+    var fields = formFields(media && media.schema);
+    return Object.keys(fields).map(function (name) {
+      var schema = fields[name].schema;
+      var many = [].concat(schema.type || []).indexOf('array') >= 0 && isFileSchema(schema.items);
+      return many || isFileSchema(schema)
+        ? { name: name, multiple: many, required: fields[name].required }
+        : null;
+    }).filter(Boolean);
+  }
+
+  // Text fields are edited like a URL-encoded form's; each file the schema declares gets a picker.
+  // The body is FormData, so the browser writes the Content-Type with its boundary itself.
+  registerBody({
+    matches: function (type) { return /^multipart\/form-data$/i.test(type); },
+    hint: 'One name=value per line for the text fields.',
+    files: fileFieldsOf,
+    initial: function (media, exampleName) {
+      var files = fileFieldsOf(media).map(function (f) { return f.name; });
+      return formLines(mediaExample(media, exampleName), files);
+    },
+    encode: function (text, files) {
+      var form = new FormData();
+      var any = false;
+      parseFormLines(text).forEach(function (pair) {
+        form.append(pair[0], pair[1]);
+        any = true;
+      });
+      (files || []).forEach(function (f) {
+        Array.prototype.forEach.call(f.input.files, function (file) {
+          form.append(f.name, file, file.name);
+          any = true;
+        });
+      });
+      return any ? form : undefined;
+    },
+  });
+
+  // Anything else is sent as typed, with its declared Content-Type. Not a promise of support,
+  // just not a refusal either.
+  var rawBody = {
+    raw: true,
+    matches: function () { return true; },
+    initial: function () { return ''; },
+    encode: function (text) { return text === '' ? undefined : text; },
+  };
+
+  function bodyHandlerFor(type) {
+    for (var i = 0; i < bodyHandlers.length; i++) {
+      if (bodyHandlers[i].matches(type)) {
+        return bodyHandlers[i];
+      }
+    }
+    return rawBody;
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Servers
+
+  function serversFor(entry) {
+    // The path item through deref, as operationFor reads it: a $ref'd item keeps its servers.
+    var declared = entry.op.servers || (deref(spec.paths[entry.path]) || {}).servers
+      || spec.servers;
+    var list = [];
+    (declared || []).forEach(function (server) {
+      if (!server || typeof server.url !== 'string') {
+        return;
+      }
+      var url = server.url.replace(/\{([^}]+)\}/g, function (match, name) {
+        var variable = server.variables && server.variables[name];
+        return variable && variable.default !== undefined ? variable.default : match;
+      });
+      try {
+        list.push({ url: new URL(url, config.appBase).href, label: server.description || url });
+      } catch (e) { /* not a URL we can send to */ }
+    });
+
+    // No servers means "/" in OpenAPI, which on a PathBase or behind a proxy is not where the API
+    // is. The page knows where the app base is, so that is the default instead.
+    if (!list.length) {
+      list.push({ url: config.appBase, label: 'This app' });
+    }
+
+    var sameOrigin = list.filter(function (s) { return new URL(s.url).origin === location.origin; });
+    return { list: list, selected: (sameOrigin[0] || list[0]).url };
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // The dialog
+
+  var dialog = null;
+  var current = null;
+  var inflight = null;
+
+  // What the viewer typed into each operation, and the last response it got, so reopening the same
+  // operation picks up where it left off. Memory only, like the default for credentials: a reload
+  // starts over. Saved by open() for the panel it replaces, synchronously, rather than on the
+  // dialog's close event, which is queued and so isn't guaranteed to land before the next open.
+  var drafts = {};
+
+  function draftKey(entry) {
+    return entry.method + ' ' + entry.path;
+  }
+
+  function paramKey(p) {
+    return p.in + ':' + p.name;
+  }
+
+  // The response is kept only once it is finished — shown, failed or cancelled — never a
+  // "Sending…" that the close aborted.
+  function saveDraft(state) {
+    var draft = { server: state.server.value, params: {}, body: null, response: null };
+    state.params.forEach(function (item) {
+      draft.params[paramKey(item.param)] = item.input.value;
+    });
+    if (state.body) {
+      draft.body = {
+        type: state.body.typeSelect.value,
+        example: state.body.exampleSelect.value,
+        text: state.body.editor.value,
+        files: state.body.files(),
+      };
+    }
+    if (state.responseDone) {
+      draft.response = Array.prototype.slice.call(state.response.childNodes);
+    }
+    drafts[draftKey(state.entry)] = draft;
+  }
+
+  function ensureDialog() {
+    if (dialog) {
+      return dialog;
+    }
+    dialog = h('dialog', { class: 'hlibz-tryit', 'aria-labelledby': 'hlibz-tryit-title' });
+
+    // ReDoc listens for shortcuts on the document; typing here is not for it.
+    dialog.addEventListener('keydown', function (e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+        e.preventDefault();
+        send();
+      }
+      if (e.key !== 'Escape') {
+        e.stopPropagation();
+      }
+    });
+    dialog.addEventListener('close', function () {
+      // The event is queued: if the console has been opened again since, this one is stale, and
+      // the request and focus it would act on belong to the new panel.
+      if (dialog.open) {
+        return;
+      }
+      if (inflight) {
+        inflight.abort();
+        inflight = null;
+      }
+      if (current && current.opener && document.contains(current.opener)) {
+        current.opener.focus();
+      }
+    });
+    // A click on the backdrop lands on the dialog element itself.
+    dialog.addEventListener('click', function (e) {
+      if (e.target === dialog) {
+        dialog.close();
+      }
+    });
+    document.body.appendChild(dialog);
+    return dialog;
+  }
+
+  function field(label, input, hint) {
+    return h('label', { class: 'hlibz-tryit-field' },
+      h('span', { class: 'hlibz-tryit-label' }, label),
+      input,
+      hint ? h('span', { class: 'hlibz-tryit-hint', text: hint }) : null);
+  }
+
+  // A secret is masked until its eye is pressed. The input is labelled through for/id rather than
+  // by nesting it in the <label>, so the button's own name doesn't end up in the input's.
+  var secretIds = 0;
+  var SVG = 'http://www.w3.org/2000/svg';
+  var EYE = 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z';
+  var PUPIL = 'M12 9a3 3 0 1 0 0 6 3 3 0 1 0 0-6z';
+  var SLASH = 'M3 3l18 18';
+
+  function icon(paths) {
+    var svg = document.createElementNS(SVG, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    paths.forEach(function (d) {
+      var path = document.createElementNS(SVG, 'path');
+      path.setAttribute('d', d);
+      svg.appendChild(path);
+    });
+    return svg;
+  }
+
+  function secretField(label, input) {
+    var id = 'hlibz-tryit-secret-' + (++secretIds);
+    input.id = id;
+    var reveal = h('button', {
+      type: 'button',
+      class: 'hlibz-tryit-reveal',
+      'aria-controls': id,
+      'aria-pressed': 'false',
+      'aria-label': 'Show ' + label.toLowerCase(),
+      title: 'Show',
+      onclick: function () {
+        var show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        reveal.setAttribute('aria-pressed', String(show));
+        reveal.setAttribute('aria-label', (show ? 'Hide ' : 'Show ') + label.toLowerCase());
+        reveal.title = show ? 'Hide' : 'Show';
+        reveal.replaceChildren(icon(show ? [EYE, PUPIL, SLASH] : [EYE, PUPIL]));
+      },
+    }, icon([EYE, PUPIL]));
+    return h('div', { class: 'hlibz-tryit-field' },
+      h('label', { class: 'hlibz-tryit-label', for: id, text: label }),
+      h('div', { class: 'hlibz-tryit-secret' }, input, reveal));
+  }
+
+  function paramDefault(p) {
+    var named = namedExamples(p);
+    var value = p.example !== undefined ? p.example
+      : named.length ? deref(p.examples[named[0].key]).value
+      : sampleOf(p.schema);
+    if (value === undefined || value === null) {
+      return '';
+    }
+    if (Array.isArray(value)) {
+      return value.join(',');
+    }
+    return typeof value === 'object' ? JSON.stringify(value) : String(value);
+  }
+
+  // The values a single-valued enum or boolean parameter can take, as the strings a <select>
+  // offers, or null for anything typed freely. An array of enums stays a comma-separated text box.
+  function choicesOf(p) {
+    var schema = deref(p.schema) || {};
+    var types = [].concat(schema.type || []);
+    if (types.indexOf('array') >= 0) {
+      return null;
+    }
+    var values = Array.isArray(schema.enum) ? schema.enum
+      : types.indexOf('boolean') >= 0 ? [true, false]
+      : null;
+    if (!values) {
+      return null;
+    }
+    values = values
+      .filter(function (v) { return v !== null && typeof v !== 'object'; })
+      .map(String);
+    return values.length ? values : null;
+  }
+
+  function open(entry, opener) {
+    ensureDialog();
+    loadCredentials();
+    if (current) {
+      saveDraft(current);
+    }
+    if (inflight) {
+      inflight.abort();
+      inflight = null;
+    }
+
+    var op = entry.op;
+    var servers = serversFor(entry);
+    var schemes = schemesFor(op);
+    var state = { entry: entry, opener: opener, params: [], auth: [], body: null, server: null };
+    current = state;
+    var draft = drafts[draftKey(entry)] || null;
+
+    // Server
+    var serverSelect = h('select', { class: 'hlibz-tryit-input' },
+      servers.list.map(function (s) {
+        return h('option', { value: s.url, selected: s.url === servers.selected, text: s.label === s.url ? s.url : s.label + ' — ' + s.url });
+      }));
+    if (draft && servers.list.some(function (s) { return s.url === draft.server; })) {
+      serverSelect.value = draft.server;
+    }
+    state.server = serverSelect;
+
+    // Auth
+    var authSection = null;
+    if (schemes.length) {
+      var store = credentialStore();
+      var forget = store ? h('div', { class: 'hlibz-tryit-saved' },
+        h('span', {
+          class: 'hlibz-tryit-hint',
+          text: (store === sessionStorage ? 'Saved for this tab' : 'Saved in this browser')
+            + (config.lifetime ? ' for ' + describeLifetime(config.lifetime) + ' after the last change' : '')
+            + ', on every page of these docs.',
+        }),
+        h('button', {
+          type: 'button',
+          class: 'hlibz-tryit-forget',
+          text: 'Forget',
+          onclick: function () {
+            forgetCredentials();
+            authSection.querySelectorAll('input[data-scheme]').forEach(function (i) {
+              i.value = '';
+            });
+          },
+        })) : null;
+      authSection = h('section', { class: 'hlibz-tryit-section' },
+        h('h3', { text: 'Authorization' }),
+        forget,
+        schemes.map(function (s) {
+          if (!s.handler) {
+            return h('p', { class: 'hlibz-tryit-hint', text: s.name + ': ' + (s.scheme.type || 'unknown') + ' is not supported here.' });
+          }
+          var values = credentials[s.name] || (credentials[s.name] = {});
+          var inputs = s.handler.fields.map(function (f) {
+            var input = h('input', {
+              class: 'hlibz-tryit-input',
+              type: f.secret ? 'password' : 'text',
+              autocomplete: 'off',
+              spellcheck: 'false',
+              value: values[f.name] || '',
+              'data-scheme': s.name,
+              oninput: function (e) {
+                // Through credentials rather than a captured object, which Forget replaces.
+                (credentials[s.name] || (credentials[s.name] = {}))[f.name] = e.target.value;
+                saveCredentials();
+              },
+            });
+            return f.secret ? secretField(f.label, input) : field(f.label, input);
+          });
+          state.auth.push(s);
+          return h('fieldset', { class: 'hlibz-tryit-scheme' },
+            h('legend', { text: s.name + ' · ' + s.handler.describe(s.scheme) }),
+            inputs);
+        }));
+    }
+
+    // Parameters, grouped by where they go. Cookie parameters can't be set from fetch.
+    var groups = { path: 'Path', query: 'Query', header: 'Headers' };
+    var paramSections = Object.keys(groups).map(function (where) {
+      var list = entry.params.filter(function (p) { return p.in === where; });
+      if (!list.length) {
+        return null;
+      }
+      return h('section', { class: 'hlibz-tryit-section' },
+        h('h3', { text: groups[where] }),
+        list.map(function (p) {
+          var required = !!p.required || where === 'path';
+          var choices = choicesOf(p);
+          var input = choices
+            ? h('select', { class: 'hlibz-tryit-input', required: required },
+              // An optional parameter can be left out, which a select needs a way to say.
+              required ? null : h('option', { value: '', text: '— not sent —' }),
+              choices.map(function (c) { return h('option', { value: c, text: c }); }))
+            : h('input', {
+              class: 'hlibz-tryit-input',
+              type: 'text',
+              spellcheck: 'false',
+              required: required,
+            });
+          input.value = draft && paramKey(p) in draft.params
+            ? draft.params[paramKey(p)]
+            : paramDefault(p);
+          state.params.push({ param: p, input: input });
+          var label = h('span', null, h('code', { text: p.name }),
+            required ? h('span', { class: 'hlibz-tryit-required', text: ' required' }) : null);
+          var schema = deref(p.schema) || {};
+          var hint = [schema.type, schema.format].filter(Boolean).join(', ')
+            + (schema.type === 'array' ? ' — comma-separated' : '');
+          return field(label, input, hint);
+        }));
+    });
+
+    // Cookie parameters get no field, since a page can't set a request's Cookie header. Named
+    // rather than left out, so a request that fails for want of one says why.
+    var cookies = entry.params.filter(function (p) { return p.in === 'cookie'; });
+    var cookieSection = cookies.length
+      ? h('section', { class: 'hlibz-tryit-section' },
+        h('h3', { text: 'Cookies' }),
+        h('p', { class: 'hlibz-tryit-hint' },
+          // h() flattens one level, so the per-cookie pieces are concatenated into one list.
+          [].concat.apply([], cookies.map(function (p, i) {
+            return [i ? ', ' : null, h('code', { text: p.name }), p.required ? ' (required)' : null];
+          })),
+          ': a browser doesn\'t let a page set these. '
+            + (config.cookies
+              ? 'The request carries whatever cookies this browser already holds for the server.'
+              : 'This console is set not to send cookies at all.')))
+      : null;
+
+    // Body
+    var bodySection = null;
+    var requestBody = deref(op.requestBody);
+    if (requestBody && requestBody.content) {
+      var types = Object.keys(requestBody.content);
+      var typeSelect = h('select', { class: 'hlibz-tryit-input' },
+        types.map(function (t) { return h('option', { value: t, text: t }); }));
+      // Prefer a type we actually understand.
+      var preferred = types.filter(function (t) { return !bodyHandlerFor(t).raw; })[0];
+      if (preferred) {
+        typeSelect.value = preferred;
+      }
+      if (draft && draft.body && types.indexOf(draft.body.type) >= 0) {
+        typeSelect.value = draft.body.type;
+      }
+      var editor = h('textarea', { class: 'hlibz-tryit-input hlibz-tryit-code', rows: 12, spellcheck: 'false' });
+      var note = h('span', { class: 'hlibz-tryit-hint' });
+      // A picker per file the media type's schema declares (multipart only). A picked file can't be
+      // put back into a new input, so the inputs themselves are what a draft keeps and reuses.
+      var filesBox = h('div', { class: 'hlibz-tryit-files' });
+      var fileInputs = [];
+      var keptFiles = (draft && draft.body && draft.body.files) || [];
+      var renderFiles = function () {
+        var handler = bodyHandlerFor(typeSelect.value);
+        var wanted = handler.files ? handler.files(requestBody.content[typeSelect.value]) : [];
+        var reusable = keptFiles.concat(fileInputs);
+        fileInputs = wanted.map(function (f) {
+          var kept = reusable.filter(function (k) {
+            return k.name === f.name && k.input.multiple === f.multiple;
+          })[0];
+          return {
+            name: f.name,
+            required: f.required,
+            input: kept ? kept.input : h('input', { type: 'file', class: 'hlibz-tryit-input', multiple: f.multiple }),
+          };
+        });
+        filesBox.replaceChildren.apply(filesBox, fileInputs.map(function (f) {
+          return field(
+            h('span', null, h('code', { text: f.name }),
+              f.required ? h('span', { class: 'hlibz-tryit-required', text: ' required' }) : null),
+            f.input,
+            f.input.multiple ? 'One or more files.' : null);
+        }));
+        filesBox.hidden = !fileInputs.length;
+      };
+      // Offered only when the media type names more than one example; each type has its own.
+      var exampleSelect = h('select', { class: 'hlibz-tryit-input' });
+      var exampleField = field('Example', exampleSelect);
+      var listExamples = function () {
+        var named = namedExamples(requestBody.content[typeSelect.value]);
+        exampleSelect.replaceChildren.apply(exampleSelect, named.map(function (n) {
+          return h('option', { value: n.key, text: n.label });
+        }));
+        exampleField.hidden = named.length < 2;
+      };
+      var fill = function () {
+        var handler = bodyHandlerFor(typeSelect.value);
+        editor.value = handler.initial(
+          requestBody.content[typeSelect.value], exampleSelect.value || undefined);
+        note.textContent = handler.raw
+          ? 'Sent as typed: this media type has no editor here yet.'
+          : handler.hint || '';
+      };
+      typeSelect.addEventListener('change', function () {
+        listExamples();
+        renderFiles();
+        fill();
+      });
+      exampleSelect.addEventListener('change', fill);
+      listExamples();
+      renderFiles();
+      if (draft && draft.body && draft.body.type === typeSelect.value && draft.body.example
+          && namedExamples(requestBody.content[typeSelect.value])
+            .some(function (n) { return n.key === draft.body.example; })) {
+        exampleSelect.value = draft.body.example;
+      }
+      fill();
+      if (draft && draft.body && draft.body.type === typeSelect.value) {
+        editor.value = draft.body.text;
+      }
+      state.body = {
+        typeSelect: typeSelect,
+        exampleSelect: exampleSelect,
+        editor: editor,
+        files: function () { return fileInputs; },
+        required: !!requestBody.required,
+      };
+      bodySection = h('section', { class: 'hlibz-tryit-section' },
+        h('h3', null, 'Body', requestBody.required ? h('span', { class: 'hlibz-tryit-required', text: ' required' }) : null),
+        types.length > 1 ? field('Content type', typeSelect) : h('p', { class: 'hlibz-tryit-hint', text: types[0] }),
+        exampleField,
+        filesBox,
+        editor,
+        h('div', { class: 'hlibz-tryit-body-bar' },
+          note,
+          h('button', {
+            type: 'button',
+            class: 'hlibz-tryit-ghost hlibz-tryit-push',
+            text: 'Reset to example',
+            onclick: function () {
+              fill();
+              editor.focus();
+            },
+          })));
+    }
+
+    var method = entry.method.toUpperCase();
+    var sendButton = h('button', {
+      type: 'button',
+      class: 'hlibz-tryit-send' + (SAFE_METHODS.indexOf(entry.method) >= 0 ? '' : ' hlibz-tryit-send-unsafe'),
+      onclick: send,
+      text: 'Send ' + method + ' request',
+    });
+    state.sendButton = sendButton;
+    state.cancelButton = h('button', {
+      type: 'button',
+      class: 'hlibz-tryit-ghost',
+      text: 'Cancel',
+      hidden: true,
+      onclick: function () {
+        if (inflight && current === state) {
+          state.cancelled = true;
+          inflight.abort();
+        }
+      },
+    });
+    var curlButton = h('button', {
+      type: 'button',
+      class: 'hlibz-tryit-ghost hlibz-tryit-push',
+      text: 'Copy as cURL',
+      title: 'Includes the credentials typed here. The browser\'s cookies are not included.',
+      onclick: function () {
+        var req;
+        try {
+          req = buildRequest(state);
+        } catch (e) {
+          showError(e.message);
+          return;
+        }
+        copyText(curlOf(entry.method, req)).then(
+          function () { flash(curlButton, 'Copied'); },
+          function () { flash(curlButton, 'Copy failed'); });
+      },
+    });
+    state.response = h('div', { class: 'hlibz-tryit-response', 'aria-live': 'polite' });
+    if (draft && draft.response) {
+      state.response.replaceChildren.apply(state.response, draft.response);
+      state.responseDone = true;
+    }
+
+    dialog.replaceChildren(
+      h('header', { class: 'hlibz-tryit-header' },
+        h('span', { class: 'hlibz-tryit-method hlibz-tryit-method-' + entry.method, text: method }),
+        h('h2', { id: 'hlibz-tryit-title', text: entry.path }),
+        h('button', { type: 'button', class: 'hlibz-tryit-close', 'aria-label': 'Close', text: '×', onclick: function () { dialog.close(); } })),
+      h('div', { class: 'hlibz-tryit-body' },
+        op.summary ? h('p', { class: 'hlibz-tryit-summary', text: op.summary }) : null,
+        h('section', { class: 'hlibz-tryit-section' }, field('Server', serverSelect)),
+        authSection,
+        paramSections,
+        cookieSection,
+        bodySection,
+        h('div', { class: 'hlibz-tryit-actions' },
+          sendButton,
+          state.cancelButton,
+          h('span', { class: 'hlibz-tryit-hint', text: (/Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl') + '+Enter' }),
+          curlButton),
+        state.response));
+
+    if (!dialog.open) {
+      dialog.showModal();
+    }
+    var first = dialog.querySelector('.hlibz-tryit-body input, .hlibz-tryit-body textarea, .hlibz-tryit-body select');
+    if (first) {
+      first.focus();
+    }
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Sending
+
+  function showError(message) {
+    current.response.replaceChildren(h('p', { class: 'hlibz-tryit-error', role: 'alert', text: message }));
+    current.responseDone = true;
+  }
+
+  function buildRequest(state) {
+    var entry = state.entry;
+    var req = { headers: new Headers(), query: [], body: undefined };
+    var path = entry.path;
+    var missing = [];
+
+    state.params.forEach(function (item) {
+      var p = item.param;
+      var value = item.input.value;
+      item.input.removeAttribute('aria-invalid');
+      if (value === '') {
+        if (item.input.required) {
+          missing.push(p.name);
+          item.input.setAttribute('aria-invalid', 'true');
+        }
+        return;
+      }
+      var schema = deref(p.schema) || {};
+      var values = schema.type === 'array' ? value.split(',').map(function (v) { return v.trim(); }) : [value];
+      if (p.in === 'path') {
+        path = path.split('{' + p.name + '}').join(values.map(encodeURIComponent).join(','));
+      } else if (p.in === 'query') {
+        if (p.explode === false) {
+          req.query.push([p.name, values.join(',')]);
+        } else {
+          values.forEach(function (v) { req.query.push([p.name, v]); });
+        }
+      } else if (p.in === 'header') {
+        req.headers.set(p.name, values.join(','));
+      }
+    });
+
+    if (missing.length) {
+      throw new Error('Required: ' + missing.join(', ') + '.');
+    }
+
+    state.auth.forEach(function (s) {
+      s.handler.apply(req, credentials[s.name] || {}, s.scheme);
+    });
+
+    if (state.body) {
+      var type = state.body.typeSelect.value;
+      var text = state.body.editor.value;
+      var files = state.body.files();
+      var noFile = files.filter(function (f) {
+        f.input.removeAttribute('aria-invalid');
+        return f.required && !f.input.files.length;
+      });
+      if (noFile.length) {
+        noFile.forEach(function (f) { f.input.setAttribute('aria-invalid', 'true'); });
+        throw new Error('Choose a file for: ' + noFile.map(function (f) { return f.name; }).join(', ') + '.');
+      }
+      var encoded;
+      try {
+        encoded = bodyHandlerFor(type).encode(text, files);
+      } catch (e) {
+        throw new Error('The body is not valid for ' + type + ': ' + e.message);
+      }
+      if (encoded === undefined && state.body.required) {
+        throw new Error('The body is required.');
+      }
+      if (encoded !== undefined) {
+        req.body = encoded;
+        // FormData's Content-Type carries a boundary only the browser knows, so it writes it.
+        if (!(encoded instanceof FormData)) {
+          req.headers.set('Content-Type', type);
+        }
+      }
+    }
+
+    var url = new URL(state.server.value.replace(/\/+$/, '') + path);
+    req.query.forEach(function (pair) { url.searchParams.append(pair[0], pair[1]); });
+    req.url = url;
+    return req;
+  }
+
+  function send() {
+    var state = current;
+    if (!state || !dialog || !dialog.open) {
+      return;
+    }
+
+    var req;
+    try {
+      req = buildRequest(state);
+    } catch (e) {
+      showError(e.message);
+      return;
+    }
+
+    if (inflight) {
+      inflight.abort();
+    }
+    var controller = new AbortController();
+    inflight = controller;
+    state.cancelled = false;
+    state.responseDone = false;
+    state.sendButton.disabled = true;
+    state.cancelButton.hidden = false;
+    state.response.replaceChildren(h('p', { class: 'hlibz-tryit-hint', text: 'Sending…' }));
+
+    var started = performance.now();
+    var arrived = false;
+    fetch(req.url.href, {
+      method: state.entry.method.toUpperCase(),
+      headers: req.headers,
+      body: req.body,
+      credentials: config.cookies ? 'same-origin' : 'omit',
+      signal: controller.signal,
+    }).then(function (response) {
+      arrived = true;
+      // Bytes rather than text, so a binary body can be measured and offered as a file instead of
+      // being decoded into noise.
+      return response.arrayBuffer().then(function (bytes) {
+        if (current === state) {
+          renderResponse(state, response, bytes, performance.now() - started, req.url);
+        }
+      });
+    }).catch(function (error) {
+      if (current !== state) {
+        return;
+      }
+      if (error && error.name === 'AbortError') {
+        // Aborted by Cancel; otherwise by a newer Send or by closing, which show their own thing.
+        if (state.cancelled) {
+          state.response.replaceChildren(h('p', { class: 'hlibz-tryit-hint', text: 'Cancelled.' }));
+          state.responseDone = true;
+        }
+        return;
+      }
+      showError(arrived
+        ? 'The response arrived but could not be read: ' + error.message
+        : req.url.origin === location.origin
+          ? 'The request failed before a response arrived: ' + error.message
+          : 'The request to ' + req.url.origin + ' was blocked. Another origin has to allow it '
+            + 'with CORS, and this page\'s Content-Security-Policy has to list it in connect-src.');
+    }).finally(function () {
+      if (inflight === controller) {
+        inflight = null;
+      }
+      // A newer Send has the buttons now; anything else (done, cancelled, closed) gives them back.
+      if (!inflight) {
+        state.sendButton.disabled = false;
+        state.cancelButton.hidden = true;
+      }
+    });
+  }
+
+  // The request as a curl command line, for a terminal. POSIX single quotes, inside which nothing
+  // is special but the quote itself.
+  function shellQuote(text) {
+    return '\'' + String(text).replace(/'/g, '\'\\\'\'') + '\'';
+  }
+
+  function curlOf(method, req) {
+    var parts = ['curl'
+      + (method === 'head' ? ' --head' : method === 'get' ? '' : ' -X ' + method.toUpperCase())
+      + ' ' + shellQuote(req.url.href)];
+    req.headers.forEach(function (value, name) {
+      parts.push('-H ' + shellQuote(name + ': ' + value));
+    });
+    if (req.body instanceof FormData) {
+      // --form-string, not -F, for text: -F reads a value starting with @ or < as a file. A file
+      // goes by its name alone, since the page never learns where it lives on disk.
+      req.body.forEach(function (value, name) {
+        parts.push(typeof value === 'string'
+          ? '--form-string ' + shellQuote(name + '=' + value)
+          : '-F ' + shellQuote(name + '=@' + value.name + (value.type ? ';type=' + value.type : '')));
+      });
+    } else if (req.body !== undefined) {
+      parts.push('--data-raw ' + shellQuote(req.body));
+    }
+    return parts.join(' \\\n  ');
+  }
+
+  // A button's label briefly replaced by what just happened to it.
+  function flash(button, message) {
+    if (!button.hlibzLabel) {
+      button.hlibzLabel = button.textContent;
+    }
+    button.textContent = message;
+    clearTimeout(button.hlibzTimer);
+    button.hlibzTimer = setTimeout(function () { button.textContent = button.hlibzLabel; }, 1500);
+  }
+
+  // Raw or pretty, for a JSON response body. One choice for the whole page, so it sticks while you
+  // send request after request.
+  var showPretty = true;
+
+  // Past this size a tree of nodes costs more than it helps: Pretty falls back to indented text.
+  var TREE_LIMIT = 512 * 1024;
+
+  // A number exactly as the server wrote it. JSON.parse would turn 1234567890123456789 into
+  // 1234567890123456800, and the Pretty view would then show, and copy, an id that doesn't exist.
+  function RawNumber(text) {
+    this.text = text;
+  }
+
+  // JSON.parse's grammar, but numbers kept as RawNumber and objects without a prototype, so a
+  // "__proto__" key is just a key. Throws a SyntaxError where JSON.parse would.
+  var NUMBER = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y;
+  var STRING = /"(?:[^"\\\u0000-\u001f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"/y;
+
+  function parseJson(text) {
+    var at = 0;
+
+    function fail() {
+      throw new SyntaxError('Unexpected token at position ' + at);
+    }
+    function space() {
+      while (at < text.length && ' \t\n\r'.indexOf(text.charAt(at)) >= 0) {
+        at++;
+      }
+    }
+    function match(pattern) {
+      pattern.lastIndex = at;
+      var found = pattern.exec(text);
+      if (!found) {
+        fail();
+      }
+      at = pattern.lastIndex;
+      return found[0];
+    }
+    function expect(char) {
+      space();
+      if (text.charAt(at) !== char) {
+        fail();
+      }
+      at++;
+    }
+    function value() {
+      space();
+      var c = text.charAt(at);
+      if (c === '"') {
+        return JSON.parse(match(STRING));
+      }
+      if (c === '{') {
+        at++;
+        var object = Object.create(null);
+        space();
+        if (text.charAt(at) === '}') {
+          at++;
+          return object;
+        }
+        do {
+          space();
+          var key = JSON.parse(match(STRING));
+          expect(':');
+          object[key] = value();
+          space();
+        } while (text.charAt(at) === ',' && ++at);
+        expect('}');
+        return object;
+      }
+      if (c === '[') {
+        at++;
+        var array = [];
+        space();
+        if (text.charAt(at) === ']') {
+          at++;
+          return array;
+        }
+        do {
+          array.push(value());
+          space();
+        } while (text.charAt(at) === ',' && ++at);
+        expect(']');
+        return array;
+      }
+      var words = { t: 'true', f: 'false', n: 'null' };
+      if (words[c]) {
+        if (text.slice(at, at + words[c].length) !== words[c]) {
+          fail();
+        }
+        at += words[c].length;
+        return JSON.parse(words[c]);
+      }
+      return new RawNumber(match(NUMBER));
+    }
+
+    var result = value();
+    space();
+    if (at < text.length) {
+      fail();
+    }
+    return result;
+  }
+
+  // JSON.stringify(value, null, 2) for what parseJson returns, numbers written as they came.
+  function prettyJson(value, indent) {
+    indent = indent || '';
+    if (value instanceof RawNumber) {
+      return value.text;
+    }
+    if (value === null || typeof value !== 'object') {
+      return JSON.stringify(value);
+    }
+    var inner = indent + '  ';
+    if (Array.isArray(value)) {
+      return value.length
+        ? '[\n' + value.map(function (v) { return inner + prettyJson(v, inner); }).join(',\n')
+          + '\n' + indent + ']'
+        : '[]';
+    }
+    var names = Object.keys(value);
+    return names.length
+      ? '{\n' + names.map(function (k) {
+        return inner + JSON.stringify(k) + ': ' + prettyJson(value[k], inner);
+      }).join(',\n') + '\n' + indent + '}'
+      : '{}';
+  }
+
+  // Pretty JSON as a tree whose objects and arrays fold. Built from nodes and textContent only, like
+  // everything else here: a response is data from a server, never markup.
+  function jsonTree(value) {
+    return h('div', { class: 'hlibz-tryit-code hlibz-tryit-output hlibz-tryit-json', tabindex: '0' },
+      jsonNode(value, null, true));
+  }
+
+  function jsonNode(value, key, last) {
+    var label = key === null ? null : [
+      h('span', { class: 'hlibz-tryit-json-key', text: JSON.stringify(key) }),
+      ': ',
+    ];
+    var comma = last ? '' : ',';
+
+    if (value instanceof RawNumber) {
+      return h('div', { class: 'hlibz-tryit-json-line' },
+        label,
+        h('span', { class: 'hlibz-tryit-json-number', text: value.text }),
+        comma);
+    }
+    if (value === null || typeof value !== 'object') {
+      var kind = value === null ? 'null' : typeof value;
+      return h('div', { class: 'hlibz-tryit-json-line' },
+        label,
+        h('span', { class: 'hlibz-tryit-json-' + kind, text: JSON.stringify(value) }),
+        comma);
+    }
+
+    var isArray = Array.isArray(value);
+    var names = isArray ? null : Object.keys(value);
+    var count = isArray ? value.length : names.length;
+    var open = isArray ? '[' : '{';
+    var close = isArray ? ']' : '}';
+    if (count === 0) {
+      return h('div', { class: 'hlibz-tryit-json-line' }, label, open + close + comma);
+    }
+
+    var children = h('div', { class: 'hlibz-tryit-json-children' });
+    for (var i = 0; i < count; i++) {
+      children.appendChild(isArray
+        ? jsonNode(value[i], null, i === count - 1)
+        : jsonNode(value[names[i]], names[i], i === count - 1));
+    }
+    var folded = h('span', { class: 'hlibz-tryit-json-folded', hidden: true },
+      h('span', { class: 'hlibz-tryit-json-ellipsis', text: '\u2026' }),
+      close + comma,
+      h('span', {
+        class: 'hlibz-tryit-json-count',
+        text: count + (isArray ? (count === 1 ? ' item' : ' items') : (count === 1 ? ' key' : ' keys')),
+      }));
+    var closing = h('div', { class: 'hlibz-tryit-json-line' }, close + comma);
+    var toggle = h('button', {
+      type: 'button',
+      class: 'hlibz-tryit-json-toggle',
+      'aria-expanded': 'true',
+      'aria-label': 'Collapse',
+      onclick: function (event) {
+        var expand = toggle.getAttribute('aria-expanded') !== 'true';
+        // Alt-click folds or unfolds everything inside too, as browsers' own JSON viewers do.
+        var scope = event.altKey ? node.querySelectorAll('.hlibz-tryit-json-toggle') : [toggle];
+        Array.prototype.forEach.call(scope, function (t) { t.hlibzSet(expand); });
+        if (event.altKey) { setExpanded(expand); }
+      },
+    });
+    function setExpanded(expand) {
+      toggle.setAttribute('aria-expanded', String(expand));
+      toggle.setAttribute('aria-label', expand ? 'Collapse' : 'Expand');
+      children.hidden = !expand;
+      closing.hidden = !expand;
+      folded.hidden = expand;
+    }
+    toggle.hlibzSet = setExpanded;
+
+    var node = h('div', { class: 'hlibz-tryit-json-node' },
+      h('div', { class: 'hlibz-tryit-json-line' }, toggle, label, open, folded),
+      children,
+      closing);
+    return node;
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    // Plain http on a host other than localhost: no async clipboard, so the old way.
+    var area = h('textarea', { class: 'hlibz-tryit-offscreen', readonly: true });
+    area.value = text;
+    (document.querySelector('dialog.hlibz-tryit[open]') || document.body).appendChild(area);
+    area.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { /* reported below */ }
+    area.remove();
+    return ok ? Promise.resolve() : Promise.reject(new Error('copy failed'));
+  }
+
+  // Any body gets Copy; only a JSON one gets Pretty and Raw.
+  function responseBody(text, maybeJson) {
+    var value;
+    var isJson = false;
+    if (maybeJson) {
+      try {
+        value = parseJson(text);
+        isJson = true;
+      } catch (e) { /* not JSON after all: shown as it came */ }
+    }
+    var pretty = isJson ? prettyJson(value) : null;
+
+    var view = h('div', { class: 'hlibz-tryit-view' });
+    var tree = null;
+    function show() {
+      var usePretty = isJson && showPretty;
+      if (usePretty && text.length <= TREE_LIMIT) {
+        tree = tree || jsonTree(value);
+        view.replaceChildren(tree);
+      } else {
+        view.replaceChildren(h('pre', {
+          class: 'hlibz-tryit-code hlibz-tryit-output',
+          tabindex: '0',
+          text: usePretty ? pretty : text,
+        }));
+      }
+    }
+
+    var copy = h('button', {
+      type: 'button',
+      class: 'hlibz-tryit-ghost hlibz-tryit-push',
+      text: 'Copy',
+      onclick: function () {
+        copyText(isJson && showPretty ? pretty : text).then(
+          function () { flash(copy, 'Copied'); },
+          function () { flash(copy, 'Copy failed'); });
+      },
+    });
+
+    var modes = null;
+    if (isJson) {
+      var option = function (label, isPretty) {
+        return h('button', {
+          type: 'button',
+          class: 'hlibz-tryit-mode',
+          'aria-pressed': String(showPretty === isPretty),
+          text: label,
+          onclick: function () {
+            showPretty = isPretty;
+            modes.querySelectorAll('button').forEach(function (b) {
+              b.setAttribute('aria-pressed', String(b.textContent === label));
+            });
+            show();
+          },
+        });
+      };
+      modes = h('div', { class: 'hlibz-tryit-modes', role: 'group', 'aria-label': 'Body view' },
+        option('Pretty', true),
+        option('Raw', false));
+    }
+
+    show();
+    return h('div', null, h('div', { class: 'hlibz-tryit-body-bar' }, modes, copy), view);
+  }
+
+  function formatSize(bytes) {
+    return bytes < 1024 ? bytes + ' B'
+      : bytes < 1024 * 1024 ? (bytes / 1024).toFixed(1) + ' KB'
+      : (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  // Whether a body of this Content-Type reads as text. No type at all is given the benefit of the
+  // doubt: a server that forgot the header far more often sent text than an image.
+  function isTextual(type) {
+    var essence = type.split(';')[0].trim().toLowerCase();
+    return essence === ''
+      || /^text\//.test(essence)
+      || /[/+](json|xml|yaml|x-yaml)$/.test(essence)
+      || /^application\/(javascript|ecmascript|x-www-form-urlencoded|graphql|x-ndjson|jsonl?)$/
+        .test(essence);
+  }
+
+  function decode(bytes, type) {
+    var charset = /;\s*charset\s*=\s*"?([^";]+)/i.exec(type);
+    try {
+      return new TextDecoder(charset ? charset[1].trim() : 'utf-8').decode(bytes);
+    } catch (e) {
+      return new TextDecoder('utf-8').decode(bytes); // a charset label TextDecoder doesn't know
+    }
+  }
+
+  // A binary body as a file to save, under the name the server suggested if it gave one.
+  function binaryBody(bytes, type, disposition) {
+    var named = /filename\*?\s*=\s*(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition || '');
+    var name = 'response';
+    if (named) {
+      try { name = decodeURIComponent(named[1]); } catch (e) { name = named[1]; }
+    }
+    var download = h('button', {
+      type: 'button',
+      class: 'hlibz-tryit-ghost hlibz-tryit-push',
+      text: 'Download',
+      onclick: function () {
+        var href = URL.createObjectURL(new Blob([bytes], { type: type }));
+        var link = h('a', { href: href, download: name, class: 'hlibz-tryit-offscreen' });
+        // Inside the dialog, as copyText's textarea is: the modal makes the rest of the page inert.
+        (dialog || document.body).appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(function () { URL.revokeObjectURL(href); }, 10000);
+      },
+    });
+    return h('div', { class: 'hlibz-tryit-body-bar' },
+      h('span', { class: 'hlibz-tryit-hint', text: 'Binary body, ' + (type || 'no Content-Type') + '.' }),
+      download);
+  }
+
+  // What the operation says this status means: the exact code, then its range (4XX), then
+  // default. Null when it says nothing, which is itself worth showing.
+  function documentedResponse(op, status) {
+    var responses = op.responses || {};
+    var code = String(status);
+    var range = code.charAt(0) + 'XX';
+    var keys = Object.keys(responses);
+    var match = keys.filter(function (k) { return k === code; })[0]
+      || keys.filter(function (k) { return k.toUpperCase() === range; })[0]
+      || keys.filter(function (k) { return k === 'default'; })[0];
+    if (!match) {
+      return null;
+    }
+    var response = deref(responses[match]) || {};
+    return { key: match, description: String(response.description || '').split('\n')[0].trim() };
+  }
+
+  function renderResponse(state, response, bytes, elapsed, url) {
+    state.responseDone = true;
+    var type = response.headers.get('content-type') || '';
+    var json = /[/+]json\b/i.test(type);
+
+    var headers = [];
+    response.headers.forEach(function (value, name) {
+      headers.push(name + ': ' + value);
+    });
+
+    var body;
+    if (!bytes.byteLength) {
+      body = h('p', { class: 'hlibz-tryit-hint', text: 'No body.' });
+    } else if (isTextual(type)) {
+      body = responseBody(decode(bytes, type), json);
+    } else {
+      body = binaryBody(bytes, type, response.headers.get('content-disposition'));
+    }
+
+    // fetch follows redirects without a word, so a 302 to a sign-in page arrives as that page's
+    // "200 OK". The status is then some other URL's, and matching it against this operation's
+    // documented responses would vouch for it; the redirect is said instead.
+    var redirect = response.redirected
+      ? h('p', { class: 'hlibz-tryit-undocumented',
+        text: 'Redirected to ' + response.url + '. The status is that URL\'s, not this operation\'s.' })
+      : null;
+
+    // Spec text goes in as text, never as the Markdown ReDoc would render it.
+    var documented = redirect ? null : documentedResponse(state.entry.op, response.status);
+    // "Unauthorized" under a 401 Unauthorized says nothing twice.
+    var says = documented && documented.description
+      && documented.description.toLowerCase() !== (response.statusText || '').toLowerCase();
+    var meaning = redirect ? redirect
+      : documented
+      ? (says
+        ? h('p', { class: 'hlibz-tryit-hint hlibz-tryit-meaning',
+          text: (documented.key === String(response.status) ? '' : documented.key + ': ')
+            + documented.description })
+        : null)
+      : h('p', { class: 'hlibz-tryit-undocumented',
+        text: 'Not a status this operation documents.' });
+
+    var tone = response.status >= 500 ? 'error' : response.status >= 400 ? 'warning' : 'success';
+    // replaceChildren, unlike h(), would write a null child out as the text "null".
+    state.response.replaceChildren.apply(state.response, [
+      h('div', { class: 'hlibz-tryit-status' },
+        h('span', { class: 'hlibz-tryit-badge hlibz-tryit-' + tone, text: String(response.status) }),
+        h('span', { text: response.statusText || '' }),
+        h('span', { class: 'hlibz-tryit-hint', text: Math.round(elapsed) + ' ms' }),
+        h('span', { class: 'hlibz-tryit-hint', text: formatSize(bytes.byteLength) })),
+      meaning,
+      h('p', { class: 'hlibz-tryit-hint hlibz-tryit-url', text: url.href }),
+      h('details', { class: 'hlibz-tryit-headers' },
+        h('summary', { text: 'Headers (' + headers.length + ')' }),
+        h('pre', { class: 'hlibz-tryit-code', text: headers.join('\n') })),
+      body,
+    ].filter(Boolean));
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Mounting the buttons
+
+  function mount() {
+    var sections = document.querySelectorAll('[data-item-kind="httpItem"][data-section-id]');
+    for (var i = 0; i < sections.length; i++) {
+      var section = sections[i];
+      var actions = section.querySelector('[data-testid="page-actions"]');
+      if (!actions || actions.querySelector('.hlibz-tryit-open')) {
+        continue;
+      }
+      var target = parseSectionId(section.getAttribute('data-section-id'));
+      var entry = target && operationFor(target.path, target.method);
+      if (!entry || entry.op['x-hideTryItPanel'] === true
+          || (config.safeOnly && SAFE_METHODS.indexOf(entry.method) < 0)) {
+        continue;
+      }
+      actions.insertBefore(makeOpener(entry), actions.firstChild);
+    }
+  }
+
+  function makeOpener(entry) {
+    var button = h('button', { type: 'button', class: 'hlibz-tryit-open', text: 'Try it' });
+    button.addEventListener('click', function () {
+      // Re-read on click: the spec can't change, but ReDoc may have rebuilt the section.
+      open(operationFor(entry.path, entry.method) || entry, button);
+    });
+    return button;
+  }
+
+  // Batched on a timer rather than requestAnimationFrame: a background tab runs no frames, and a
+  // section React re-rendered there would sit without its button until something else changed.
+  var scheduled = false;
+  function scheduleMount() {
+    if (scheduled) {
+      return;
+    }
+    scheduled = true;
+    setTimeout(function () {
+      scheduled = false;
+      mount();
+    }, 50);
+  }
+
+  fetch(new URL(config.specUrl, location.href).href, {
+    credentials: 'same-origin',
+    headers: { Accept: 'application/json' },
+  }).then(function (response) {
+    if (!response.ok) {
+      throw new Error('HTTP ' + response.status);
+    }
+    return response.text();
+  }).then(function (text) {
+    try {
+      spec = JSON.parse(text);
+    } catch (e) {
+      // ReDoc reads YAML too; this console doesn't carry a YAML parser.
+      throw new Error('it is not JSON, and the console reads JSON documents only');
+    }
+    mount();
+    // ReDoc renders operations as they come near the viewport, so new ones keep arriving. The
+    // console's own changes — a response tree can be thousands of nodes — never add a section.
+    new MutationObserver(function (records) {
+      for (var i = 0; i < records.length; i++) {
+        if (!dialog || !dialog.contains(records[i].target)) {
+          scheduleMount();
+          return;
+        }
+      }
+    }).observe(document.body, { childList: true, subtree: true });
+  }).catch(function (error) {
+    // The page itself still works; only the console is missing.
+    console.warn('Try it: no buttons, because the OpenAPI document could not be read: '
+      + error.message + '.');
+  });
+})();

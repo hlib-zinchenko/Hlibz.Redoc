@@ -1,10 +1,14 @@
+using System.Globalization;
 using System.Net;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.OpenApi;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.OpenApi;
 
 using Xunit;
 
@@ -49,6 +53,49 @@ public class ReDocSpecServingTests
             "locations",
             document.RootElement.GetProperty("info").GetProperty("title").GetString(),
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ServeSpecs_WritesNumbersTheSameWayWhateverTheServersCulture()
+    {
+        // A culture whose decimal separator is a comma. The document is written through a
+        // TextWriter, and TextWriter.Write(decimal) formats with the writer's culture, so a writer
+        // on the current one produced "129,99": not JSON, and a blank ReDoc page. It flows into the
+        // server's request handling from here, since the server is started inside it.
+        CultureInfo original = CultureInfo.CurrentCulture;
+        CultureInfo.CurrentCulture = new CultureInfo("uk-UA");
+        try
+        {
+            await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+                Documents,
+                options => options.ServeSpecs = true,
+                configureServices: builder =>
+                {
+                    AddDocuments(builder.Services, Documents);
+                    builder.Services.Configure<OpenApiOptions>("locations", openApi =>
+                        openApi.AddDocumentTransformer((document, _, _) =>
+                        {
+                            document.Components ??= new OpenApiComponents();
+                            document.Components.Examples ??=
+                                new Dictionary<string, IOpenApiExample>();
+                            document.Components.Examples["price"] =
+                                new OpenApiExample { Value = JsonValue.Create(129.99m) };
+                            return Task.CompletedTask;
+                        }));
+                });
+
+            string json = await app.GetStringAsync(SpecPath);
+
+            using JsonDocument document = JsonDocument.Parse(json);
+            Assert.Equal(
+                129.99m,
+                document.RootElement.GetProperty("components").GetProperty("examples")
+                    .GetProperty("price").GetProperty("value").GetDecimal());
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = original;
+        }
     }
 
     [Fact]

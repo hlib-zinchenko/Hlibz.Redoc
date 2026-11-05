@@ -72,13 +72,17 @@ Both adapters behave identically; the package reference differs, the code doesn'
 | Strict CSP | `script-src 'self'`, no nonce — nothing is inline | needs a nonce; the host's own `Redoc.init` is inline |
 | Third-party requests | none; ReDoc telemetry off by default | Google Fonts, unless you call `UseSystemFonts()` |
 | Print stylesheet | yes | yes |
+| "Try it" console | yes, opt-in: JSON and form bodies; bearer, Basic, API-key and pasted OAuth tokens | no |
 | Dependencies | ASP.NET Core only | the host package |
 
 ## What this doesn't do
 
 - **It doesn't generate OpenAPI documents.** `AddOpenApi()`, `AddSwaggerGen()` or NSwag still do
   that; these packages render what they produce.
-- **No "Try it" console.** That is a Redocly commercial feature on both ReDoc 2 and 3.
+- **No "Try it" console on the adapters.** ReDoc's own is a Redocly commercial feature. Only
+  `Hlibz.Redoc.AspNetCore` ships one of its own, and it is deliberately small so far: JSON and
+  form-encoded bodies; bearer, Basic and API-key auth; and a pasted token for OAuth 2.0 and OpenID
+  Connect, with no login flow.
 - **Hiding a document is not access control.** `Unlisted` hides a link, and gating a documentation
   page keeps your internal surface off the open web. Neither protects the API endpoints the
   document describes — those need their own authorization.

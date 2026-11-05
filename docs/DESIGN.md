@@ -102,6 +102,19 @@ anywhere.
 entire reason `Hlibz.Redoc.AspNetCore` has its own `ReDocPage`. Nothing is inline there — not the
 config, not the picker, not the color-mode bootstrap.
 
+### Stored try-it credentials
+
+When the try-it console keeps credentials in `sessionStorage` or `localStorage`, any script on the
+origin can read them, so the pages fall back to `DefaultContentSecurityPolicy` when no policy was
+set: `script-src 'self'` is what keeps an injected script off the page. That default allows
+`connect-src 'self'` only, so the origin of any spec URL on another server is added to it — imposed
+as it stands, it would blank a page that worked before storage was turned on. A cross-origin
+`servers` entry can't be added the same way: the spec is read in the browser, after the policy is
+fixed.
+
+Encrypting the stored value was considered and rejected. The page has to decrypt it without asking
+the viewer, so the key would sit beside the ciphertext, readable by the same script.
+
 ## The ReDoc 3 host
 
 ### Everything is worked out at startup
