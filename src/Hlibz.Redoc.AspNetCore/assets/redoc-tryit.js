@@ -508,6 +508,51 @@
       hint ? h('span', { class: 'hlibz-tryit-hint', text: hint }) : null);
   }
 
+  // A secret is masked until its eye is pressed. The input is labelled through for/id rather than
+  // by nesting it in the <label>, so the button's own name doesn't end up in the input's.
+  var secretIds = 0;
+  var SVG = 'http://www.w3.org/2000/svg';
+  var EYE = 'M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z';
+  var PUPIL = 'M12 9a3 3 0 1 0 0 6 3 3 0 1 0 0-6z';
+  var SLASH = 'M3 3l18 18';
+
+  function icon(paths) {
+    var svg = document.createElementNS(SVG, 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    paths.forEach(function (d) {
+      var path = document.createElementNS(SVG, 'path');
+      path.setAttribute('d', d);
+      svg.appendChild(path);
+    });
+    return svg;
+  }
+
+  function secretField(label, input) {
+    var id = 'hlibz-tryit-secret-' + (++secretIds);
+    input.id = id;
+    var reveal = h('button', {
+      type: 'button',
+      class: 'hlibz-tryit-reveal',
+      'aria-controls': id,
+      'aria-pressed': 'false',
+      'aria-label': 'Show ' + label.toLowerCase(),
+      title: 'Show',
+      onclick: function () {
+        var show = input.type === 'password';
+        input.type = show ? 'text' : 'password';
+        reveal.setAttribute('aria-pressed', String(show));
+        reveal.setAttribute('aria-label', (show ? 'Hide ' : 'Show ') + label.toLowerCase());
+        reveal.title = show ? 'Hide' : 'Show';
+        reveal.replaceChildren(icon(show ? [EYE, PUPIL, SLASH] : [EYE, PUPIL]));
+      },
+    }, icon([EYE, PUPIL]));
+    return h('div', { class: 'hlibz-tryit-field' },
+      h('label', { class: 'hlibz-tryit-label', for: id, text: label }),
+      h('div', { class: 'hlibz-tryit-secret' }, input, reveal));
+  }
+
   function paramDefault(p) {
     var value = p.example !== undefined ? p.example : sampleOf(p.schema);
     if (value === undefined || value === null) {
@@ -561,7 +606,7 @@
                 saveCredentials();
               },
             });
-            return field(f.label, input);
+            return f.secret ? secretField(f.label, input) : field(f.label, input);
           });
           state.auth.push(s);
           return h('fieldset', { class: 'hlibz-tryit-scheme' },
@@ -785,14 +830,176 @@
     });
   }
 
+  // Raw or pretty, for a JSON response body. One choice for the whole page, so it sticks while you
+  // send request after request.
+  var showPretty = true;
+
+  // Past this size a tree of nodes costs more than it helps: Pretty falls back to indented text.
+  var TREE_LIMIT = 512 * 1024;
+
+  // Pretty JSON as a tree whose objects and arrays fold. Built from nodes and textContent only, like
+  // everything else here: a response is data from a server, never markup.
+  function jsonTree(value) {
+    return h('div', { class: 'hlibz-tryit-code hlibz-tryit-output hlibz-tryit-json', tabindex: '0' },
+      jsonNode(value, null, true));
+  }
+
+  function jsonNode(value, key, last) {
+    var label = key === null ? null : [
+      h('span', { class: 'hlibz-tryit-json-key', text: JSON.stringify(key) }),
+      ': ',
+    ];
+    var comma = last ? '' : ',';
+
+    if (value === null || typeof value !== 'object') {
+      var kind = value === null ? 'null' : typeof value;
+      return h('div', { class: 'hlibz-tryit-json-line' },
+        label,
+        h('span', { class: 'hlibz-tryit-json-' + kind, text: JSON.stringify(value) }),
+        comma);
+    }
+
+    var isArray = Array.isArray(value);
+    var names = isArray ? null : Object.keys(value);
+    var count = isArray ? value.length : names.length;
+    var open = isArray ? '[' : '{';
+    var close = isArray ? ']' : '}';
+    if (count === 0) {
+      return h('div', { class: 'hlibz-tryit-json-line' }, label, open + close + comma);
+    }
+
+    var children = h('div', { class: 'hlibz-tryit-json-children' });
+    for (var i = 0; i < count; i++) {
+      children.appendChild(isArray
+        ? jsonNode(value[i], null, i === count - 1)
+        : jsonNode(value[names[i]], names[i], i === count - 1));
+    }
+    var folded = h('span', { class: 'hlibz-tryit-json-folded', hidden: true },
+      h('span', { class: 'hlibz-tryit-json-ellipsis', text: '\u2026' }),
+      close + comma,
+      h('span', {
+        class: 'hlibz-tryit-json-count',
+        text: count + (isArray ? (count === 1 ? ' item' : ' items') : (count === 1 ? ' key' : ' keys')),
+      }));
+    var closing = h('div', { class: 'hlibz-tryit-json-line' }, close + comma);
+    var toggle = h('button', {
+      type: 'button',
+      class: 'hlibz-tryit-json-toggle',
+      'aria-expanded': 'true',
+      'aria-label': 'Collapse',
+      onclick: function (event) {
+        var expand = toggle.getAttribute('aria-expanded') !== 'true';
+        // Alt-click folds or unfolds everything inside too, as browsers' own JSON viewers do.
+        var scope = event.altKey ? node.querySelectorAll('.hlibz-tryit-json-toggle') : [toggle];
+        Array.prototype.forEach.call(scope, function (t) { t.hlibzSet(expand); });
+        if (event.altKey) { setExpanded(expand); }
+      },
+    });
+    function setExpanded(expand) {
+      toggle.setAttribute('aria-expanded', String(expand));
+      toggle.setAttribute('aria-label', expand ? 'Collapse' : 'Expand');
+      children.hidden = !expand;
+      closing.hidden = !expand;
+      folded.hidden = expand;
+    }
+    toggle.hlibzSet = setExpanded;
+
+    var node = h('div', { class: 'hlibz-tryit-json-node' },
+      h('div', { class: 'hlibz-tryit-json-line' }, toggle, label, open, folded),
+      children,
+      closing);
+    return node;
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      return navigator.clipboard.writeText(text);
+    }
+    // Plain http on a host other than localhost: no async clipboard, so the old way.
+    var area = h('textarea', { class: 'hlibz-tryit-offscreen', readonly: true });
+    area.value = text;
+    (document.querySelector('dialog.hlibz-tryit[open]') || document.body).appendChild(area);
+    area.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { /* reported below */ }
+    area.remove();
+    return ok ? Promise.resolve() : Promise.reject(new Error('copy failed'));
+  }
+
+  // Any body gets Copy; only a JSON one gets Pretty and Raw.
+  function responseBody(text, maybeJson) {
+    var value;
+    var isJson = false;
+    if (maybeJson) {
+      try {
+        value = JSON.parse(text);
+        isJson = true;
+      } catch (e) { /* not JSON after all: shown as it came */ }
+    }
+    var pretty = isJson ? JSON.stringify(value, null, 2) : null;
+
+    var view = h('div', { class: 'hlibz-tryit-view' });
+    var tree = null;
+    function show() {
+      var usePretty = isJson && showPretty;
+      if (usePretty && text.length <= TREE_LIMIT) {
+        tree = tree || jsonTree(value);
+        view.replaceChildren(tree);
+      } else {
+        view.replaceChildren(h('pre', {
+          class: 'hlibz-tryit-code hlibz-tryit-output',
+          tabindex: '0',
+          text: usePretty ? pretty : text,
+        }));
+      }
+    }
+
+    var copy = h('button', {
+      type: 'button',
+      class: 'hlibz-tryit-copy',
+      text: 'Copy',
+      onclick: function () {
+        copyText(isJson && showPretty ? pretty : text).then(
+          function () { flash('Copied'); },
+          function () { flash('Copy failed'); });
+      },
+    });
+    var flashTimer = 0;
+    function flash(message) {
+      copy.textContent = message;
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(function () { copy.textContent = 'Copy'; }, 1500);
+    }
+
+    var modes = null;
+    if (isJson) {
+      var option = function (label, isPretty) {
+        return h('button', {
+          type: 'button',
+          class: 'hlibz-tryit-mode',
+          'aria-pressed': String(showPretty === isPretty),
+          text: label,
+          onclick: function () {
+            showPretty = isPretty;
+            modes.querySelectorAll('button').forEach(function (b) {
+              b.setAttribute('aria-pressed', String(b.textContent === label));
+            });
+            show();
+          },
+        });
+      };
+      modes = h('div', { class: 'hlibz-tryit-modes', role: 'group', 'aria-label': 'Body view' },
+        option('Pretty', true),
+        option('Raw', false));
+    }
+
+    show();
+    return h('div', null, h('div', { class: 'hlibz-tryit-body-bar' }, modes, copy), view);
+  }
+
   function renderResponse(state, response, text, elapsed, url) {
     var type = response.headers.get('content-type') || '';
-    var shown = text;
-    if (/[/+]json\b/i.test(type) && text) {
-      try {
-        shown = JSON.stringify(JSON.parse(text), null, 2);
-      } catch (e) { /* show it as it came */ }
-    }
+    var json = /[/+]json\b/i.test(type);
 
     var headers = [];
     response.headers.forEach(function (value, name) {
@@ -809,8 +1016,8 @@
       h('details', { class: 'hlibz-tryit-headers' },
         h('summary', { text: 'Headers (' + headers.length + ')' }),
         h('pre', { class: 'hlibz-tryit-code', text: headers.join('\n') })),
-      shown
-        ? h('pre', { class: 'hlibz-tryit-code hlibz-tryit-output', tabindex: '0', text: shown })
+      text
+        ? responseBody(text, json)
         : h('p', { class: 'hlibz-tryit-hint', text: 'No body.' }));
   }
 

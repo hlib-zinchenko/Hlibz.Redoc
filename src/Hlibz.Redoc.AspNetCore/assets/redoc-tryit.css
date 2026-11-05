@@ -146,6 +146,36 @@ dialog.hlibz-tryit::backdrop { background: rgba(0, 0, 0, 0.35); }
   background: var(--input-bg-color, var(--bg-color, #fff));
   color: inherit;
 }
+/* A secret with its eye button inside the right edge of the input. */
+.hlibz-tryit-secret { position: relative; }
+.hlibz-tryit-secret .hlibz-tryit-input { padding-right: 36px; }
+.hlibz-tryit-reveal {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--border-radius, 6px);
+  background: transparent;
+  color: var(--text-color-secondary, #71717a);
+  cursor: pointer;
+}
+.hlibz-tryit-reveal:hover { color: var(--text-color-primary, #18181b); }
+.hlibz-tryit-reveal svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .hlibz-tryit-input[aria-invalid="true"] { border-color: var(--color-error-base, #dc2626); }
 .hlibz-tryit-code {
   font-family: var(--code-font-family, ui-monospace, monospace);
@@ -201,6 +231,99 @@ textarea.hlibz-tryit-code { resize: vertical; tab-size: 2; }
   cursor: pointer;
   color: var(--text-color-secondary, #52525b);
   margin: 6px 0;
+}
+.hlibz-tryit-body-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+.hlibz-tryit-copy {
+  font: inherit;
+  font-size: 0.85em;
+  margin-left: auto;
+  padding: 3px 12px;
+  border: 1px solid var(--border-color-primary, #d4d4d8);
+  border-radius: var(--border-radius, 6px);
+  background: transparent;
+  color: var(--text-color-secondary, #52525b);
+  cursor: pointer;
+}
+.hlibz-tryit-copy:hover { color: var(--text-color-primary, #18181b); }
+.hlibz-tryit-offscreen { position: fixed; top: 0; left: -9999px; opacity: 0; }
+
+/* The folding JSON view. Indentation is padding, so a copied selection carries no stray spaces;
+   the toggle sits in the gutter that the root's padding leaves. */
+.hlibz-tryit-json {
+  margin: 0;
+  padding: 10px 12px 10px 28px;
+  border-radius: var(--border-radius, 6px);
+  background: var(--code-block-bg-color, var(--layer-color, #f4f4f5));
+  max-height: 50vh;
+  overflow: auto;
+  line-height: 1.5;
+}
+.hlibz-tryit-json-line { white-space: pre-wrap; overflow-wrap: anywhere; }
+.hlibz-tryit-json-children { padding-left: 2ch; }
+.hlibz-tryit-json-toggle {
+  font: inherit;
+  display: inline-block;
+  width: 16px;
+  margin-left: -18px;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-color-secondary, #71717a);
+  cursor: pointer;
+  user-select: none;
+}
+.hlibz-tryit-json-toggle::before { content: "\25BE"; }
+.hlibz-tryit-json-toggle[aria-expanded="false"]::before { content: "\25B8"; }
+.hlibz-tryit-json-toggle:hover { color: var(--text-color-primary, #18181b); }
+.hlibz-tryit-json-ellipsis {
+  margin: 0 2px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: var(--layer-color, rgba(127, 127, 127, 0.15));
+}
+.hlibz-tryit-json-count {
+  margin-left: 8px;
+  color: var(--text-color-secondary, #71717a);
+  font-style: italic;
+  user-select: none;
+}
+.hlibz-tryit-json-key { color: var(--color-primary-base, #2563eb); }
+.hlibz-tryit-json-string { color: var(--color-success-base, #16a34a); }
+.hlibz-tryit-json-number,
+.hlibz-tryit-json-boolean { color: var(--color-warning-base, #d97706); }
+.hlibz-tryit-json-null { color: var(--text-color-secondary, #71717a); }
+/* The hidden attribute is the browser stylesheet's display: none, which any display on a class of
+   ours would outrank. None here sets one today; this keeps it that way. */
+.hlibz-tryit-json [hidden] { display: none; }
+
+.hlibz-tryit-modes {
+  display: inline-flex;
+  border: 1px solid var(--border-color-primary, #d4d4d8);
+  border-radius: var(--border-radius, 6px);
+  overflow: hidden;
+}
+.hlibz-tryit-mode {
+  font: inherit;
+  font-size: 0.85em;
+  padding: 3px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-color-secondary, #52525b);
+  cursor: pointer;
+}
+.hlibz-tryit-mode + .hlibz-tryit-mode {
+  border-left: 1px solid var(--border-color-primary, #d4d4d8);
+}
+.hlibz-tryit-mode[aria-pressed="true"] {
+  background: var(--color-primary-base, #2563eb);
+  color: var(--bg-color, #fff);
+  font-weight: 600;
 }
 .hlibz-tryit pre {
   margin: 0;
