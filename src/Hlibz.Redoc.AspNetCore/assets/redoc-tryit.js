@@ -3,8 +3,9 @@
 // It never touches ReDoc's React state. It reads the spec itself, mounts a "Try it" button into
 // each operation's page-actions, and opens a <dialog> of its own. The DOM contract it relies on
 // is ReDoc 3's: [data-item-kind="httpItem"][data-section-id] per operation, whose id ends in
-// /paths/{JSON-pointer path}/{method}, and [data-testid="page-actions"] inside it. Measured on
-// 3.0.1; TRY-IT.md has the details.
+// its lowercased operationId when it has one and in /paths/{JSON-pointer path}/{method} when it
+// doesn't, and [data-testid="page-actions"] inside it. Measured on 3.0.1; TRY-IT.md has the
+// details.
 //
 // Auth schemes and request bodies are handled through two small registries (auth, bodies), which
 // is how other schemes and media types get added without touching anything else.
@@ -144,6 +145,54 @@
     });
 
     return { path: path, method: method, op: op, params: params };
+  }
+
+  // Which operation a section is. ReDoc anchors one with an operationId at
+  // /{tag-slug}/{operationId} — lowercased, with '\' written as %5C and nothing else escaped —
+  // and only one without at /{tag-slug}/paths/{pointer}/{method}, so the path form is trusted
+  // only for an operation that has no operationId.
+  var byOperationId = null;
+
+  function operationIdIndex() {
+    if (byOperationId) {
+      return byOperationId;
+    }
+    byOperationId = Object.create(null);
+    Object.keys((spec && spec.paths) || {}).forEach(function (path) {
+      var item = deref(spec.paths[path]);
+      METHODS.forEach(function (method) {
+        var op = item && item[method];
+        if (op && typeof op.operationId === 'string' && op.operationId) {
+          var key = op.operationId.replace(/\\/g, '%5C').toLowerCase();
+          // Two ids differing only in case share an anchor; neither can be told apart, so
+          // neither gets a button rather than one getting the other's.
+          byOperationId[key] = key in byOperationId ? null : { path: path, method: method };
+        }
+      });
+    });
+    return byOperationId;
+  }
+
+  function targetOf(id) {
+    var target = parseSectionId(id);
+    var entry = target && operationFor(target.path, target.method);
+    if (entry && !entry.op.operationId) {
+      return target;
+    }
+
+    // An operationId may itself contain '/', so the longest one the id ends with wins.
+    var index = operationIdIndex();
+    var lower = id.toLowerCase();
+    var best = null;
+    var bestLength = -1;
+    Object.keys(index).forEach(function (key) {
+      if (index[key] && key.length > bestLength
+          && lower.slice(-(key.length + 1)) === '/' + key) {
+        best = index[key];
+        bestLength = key.length;
+      }
+    });
+    return best;
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -1772,7 +1821,7 @@
       if (!actions || actions.querySelector('.hlibz-tryit-open')) {
         continue;
       }
-      var target = parseSectionId(section.getAttribute('data-section-id'));
+      var target = targetOf(section.getAttribute('data-section-id'));
       var entry = target && operationFor(target.path, target.method);
       if (!entry || entry.op['x-hideTryItPanel'] === true
           || (config.safeOnly && SAFE_METHODS.indexOf(entry.method) < 0)) {

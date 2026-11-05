@@ -52,9 +52,14 @@ a frozen bundle.
   `div[data-item-kind="httpItem"][data-section-id="/sample.own/paths/~1widgets~1{id}/get"]`.
   On first load, only 3 of the 5 sample operations existed in the DOM. The rest appeared as the
   view moved.
-- **The section id is the operation's address**: `/{tag-slug}/paths/{JSON-pointer path}/{method}`.
-  Take the part after `/paths/`, unescape `~1`→`/` and `~0`→`~`, split off the trailing method,
-  and you have `spec.paths[path][method]`. No guessing from headings.
+- **The section id is the operation's address**, in one of two forms. Without an `operationId`
+  it is `/{tag-slug}/paths/{JSON-pointer path}/{method}`: take the part after `/paths/`, unescape
+  `~1`→`/` and `~0`→`~`, split off the trailing method, and you have `spec.paths[path][method]`.
+  **With one, it is `/{tag-slug}/{operationId}`, lowercased**, with `\` written as `%5C` and
+  nothing else escaped — read off the bundle's slug function, and missed until an app whose every
+  endpoint is named (`.WithName`) showed no buttons at all. The script indexes operationIds the
+  same way and takes the longest one the id ends with, since an operationId may contain `/`.
+  No guessing from headings either way.
 - **Each section has its own `[data-testid="page-actions"]`** (the Copy split button). A button
   prepended there **survived** a colour-mode switch, sidebar navigation and scrolling with no
   remounts (5 mounts for 5 operations). A `MutationObserver` on `body` picked up the late-rendered

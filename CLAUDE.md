@@ -233,9 +233,12 @@ takes one project at a time.
     attributes on its `<script>` tag, so nothing is inline. It is served beside each page, inside
     that document's group, so a gated document's console is gated with it.
     - It hangs off ReDoc 3's DOM, measured on 3.0.1: one
-      `[data-item-kind="httpItem"][data-section-id]` per operation, whose id ends
+      `[data-item-kind="httpItem"][data-section-id]` per operation, whose id ends in the
+      operation's **lowercased `operationId`** when it has one, and only otherwise in
       `/paths/{JSON pointer}/{method}` — the last `/paths/`, since the pointer escapes every `/` —
-      and a `[data-testid="page-actions"]` inside it, where the button is prepended. ReDoc renders
+      and a `[data-testid="page-actions"]` inside it, where the button is prepended. The samples
+      name no operations, so the path form was all anyone saw until a consumer's app, which names
+      every one, rendered no buttons; the browser tests carry one named operation for that. ReDoc renders
       sections only near the viewport, so a `MutationObserver` keeps mounting. Batch that on a
       **timer, not `requestAnimationFrame`**: a background tab runs no frames, and a section React
       re-rendered there sat without its button.

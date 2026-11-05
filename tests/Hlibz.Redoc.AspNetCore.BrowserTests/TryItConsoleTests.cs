@@ -108,6 +108,20 @@ public sealed class TryItConsoleTests(TryItSite site) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task OperationWithAnOperationId_GetsAButtonToo()
+    {
+        // ReDoc anchors this one at /{tag}/getwidgetstock, not /{tag}/paths/..., so finding it
+        // by path alone left it without a button.
+        ILocator dialog = await OpenAtAsync("getwidgetstock");
+        await Field(dialog, "id").FillAsync(KeyboardId);
+
+        await SendAsync(dialog);
+
+        await Expect(Status(dialog)).ToHaveTextAsync("200");
+        await Expect(Response(dialog)).ToContainTextAsync(KeyboardId);
+    }
+
+    [Fact]
     public async Task Draft_SurvivesClosingAndReopening()
     {
         ILocator dialog = await OpenAsync("/widgets", "post");
@@ -120,30 +134,38 @@ public sealed class TryItConsoleTests(TryItSite site) : IAsyncLifetime
         await Expect(dialog.Locator("textarea")).ToHaveValueAsync("{\"draft\": true}");
     }
 
+    /// <summary>Opens the console on an operation without an operationId.</summary>
+    private Task<ILocator> OpenAsync(string path, string method) =>
+        OpenAtAsync(Anchor(path, method));
+
     /// <summary>
-    /// Opens the console on one operation. ReDoc renders only the sections near the viewport, so
-    /// the page is sent to the operation's own anchor first; the anchor starts with the slug of
-    /// the operation's tag, which is read off the sidebar rather than assumed.
+    /// Opens the console on the operation whose anchor ends in <paramref name="anchor"/>. ReDoc
+    /// renders only the sections near the viewport, so the page is sent to that anchor first; it
+    /// starts with the slug of the operation's tag, which is read off the sidebar rather than
+    /// assumed.
     /// </summary>
-    private async Task<ILocator> OpenAsync(string path, string method)
+    private async Task<ILocator> OpenAtAsync(string anchor)
     {
         await page.GotoAsync(site.Address + "/api-docs/widgets/");
         string tag = (await page.Locator("a[href^='#/']:not([href='#/'])").First
             .GetAttributeAsync("href"))!;
 
-        await page.EvaluateAsync(
-            "hash => { location.hash = hash; }", $"{tag}/paths/{Pointer(path)}/{method}");
-        await OpenerFor(path, method).ClickAsync();
+        await page.EvaluateAsync("hash => { location.hash = hash; }", $"{tag}/{anchor}");
+        await OpenerAt(anchor).ClickAsync();
 
         ILocator dialog = page.Locator("dialog.hlibz-tryit");
         await Expect(dialog).ToBeVisibleAsync();
         return dialog;
     }
 
-    private ILocator OpenerFor(string path, string method) =>
-        page.Locator($"[data-section-id$='/paths/{Pointer(path)}/{method}'] .hlibz-tryit-open");
+    private ILocator OpenerFor(string path, string method) => OpenerAt(Anchor(path, method));
 
-    private static string Pointer(string path) => path.Replace("~", "~0").Replace("/", "~1");
+    private ILocator OpenerAt(string anchor) =>
+        page.Locator($"[data-section-id$='/{anchor}'] .hlibz-tryit-open");
+
+    /// <summary>ReDoc's anchor for an operation that has no operationId.</summary>
+    private static string Anchor(string path, string method) =>
+        $"paths/{path.Replace("~", "~0").Replace("/", "~1")}/{method}";
 
     /// <summary>The input or select in the field whose label starts with <paramref name="label"/>.</summary>
     private static ILocator Field(ILocator dialog, string label) =>
