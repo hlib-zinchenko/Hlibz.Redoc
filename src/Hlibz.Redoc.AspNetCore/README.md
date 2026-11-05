@@ -490,9 +490,39 @@ and read the status, headers and body that come back.
 
 - **Auth**: bearer tokens, HTTP Basic, and API keys in a header or the query string. OAuth 2.0 and
   OpenID Connect schemes take a pasted access token; there is no login flow yet. A token is entered
-  once per security scheme and covers every operation on the page. It stays in memory and is gone on
-  reload, unless `PersistCredentials` keeps it in `sessionStorage` for the tab. It is never written
-  to `localStorage`.
+  once per security scheme and covers every operation on the page. Secret fields have an eye button
+  to show what was typed.
+- **Remembering credentials**: by default they stay in memory, gone on a reload or a switch to
+  another document. `CredentialStorage` keeps them in the browser instead, once for the whole app,
+  so every document in the picker shares them:
+
+  ```csharp
+  docs.EnableTryIt(tryIt => tryIt.CredentialStorage = ReDocTryItCredentialStorage.Local);
+  ```
+
+  | `CredentialStorage` | Kept in | Survives |
+  |---|---|---|
+  | `Memory` (default) | the page | nothing |
+  | `Session` | `sessionStorage` | reloads and document switches, until the tab closes |
+  | `Local` | `localStorage` | everything, until the viewer presses **Forget** or clears site data |
+
+  Stored credentials expire **8 hours** after they were last typed; `CredentialLifetime` sets
+  your own value, or `null` to keep them until forgotten:
+
+  ```csharp
+  docs.EnableTryIt(tryIt =>
+  {
+      tryIt.CredentialStorage = ReDocTryItCredentialStorage.Local;
+      tryIt.CredentialLifetime = TimeSpan.FromDays(7);
+  });
+  ```
+
+  Stored credentials can be read by any script running on this origin. So storing them turns on
+  `DefaultContentSecurityPolicy` for the pages unless you set `ContentSecurityPolicy` or your own
+  middleware sends a policy — `script-src 'self'` is what keeps an injected script off the page.
+  Still, choose `Local` only for docs whose viewers expect their browser to remember a key, and
+  never for a production token someone might type on a shared machine. Encrypting the stored
+  value wouldn't change that: the page has to decrypt it without asking, so the key sits beside it.
 - **Bodies**: JSON, with an example built from the schema's `example`, `default` or `enum` values
   where it has them. Any other media type is sent as typed, with its declared `Content-Type`.
 - **Where requests go**: the spec's `servers`, or, if it declares none, the root of the app the
@@ -705,7 +735,7 @@ Two things worth knowing:
 | `RememberLastDocument` | `/{RoutePrefix}` returns you to the document you were last reading. Defaults to `false`; sets a cookie when on. |
 | `ContentSecurityPolicy` | Sent with each page. Unset, none is sent. A policy your own middleware set is left alone. |
 | `UseDefaultContentSecurityPolicy()` | Sets the verified policy above. |
-| `EnableTryIt(configure)` | Adds a "Try it" console to every operation. `configure` sets `PersistCredentials` (keep typed credentials in `sessionStorage`; default `false`) and `SendCookies` (default `true`). |
+| `EnableTryIt(configure)` | Adds a "Try it" console to every operation. `configure` sets `CredentialStorage` (`Memory`, `Session` or `Local`; where typed credentials are kept, default `Memory`; storing them turns on the default CSP unless one is set), `CredentialLifetime` (how long stored credentials last after the last change; default 8 hours, `null` for no expiry) and `SendCookies` (default `true`). |
 | `PrintStyles` | Print the page light, without the toolbar. Defaults to `true`. |
 | `HideDownloadButton` | Hide ReDoc's "Download OpenAPI description" button. |
 | `RequiredPropsFirst` | List required properties before optional ones in schemas. |

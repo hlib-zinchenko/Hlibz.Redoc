@@ -22,11 +22,45 @@ namespace Hlibz.Redoc.Extensions;
 public sealed class ReDocTryItOptions
 {
     /// <summary>
-    /// Whether credentials a viewer types survive a reload of the page, in
-    /// <c>sessionStorage</c>. Defaults to <see langword="false"/>: they are kept in memory only
-    /// and are gone when the page is closed or reloaded. Never written to <c>localStorage</c>.
+    /// Where credentials a viewer types are kept. Defaults to
+    /// <see cref="ReDocTryItCredentialStorage.Memory"/>: they are gone on a reload or a switch to
+    /// another document. <see cref="ReDocTryItCredentialStorage.Session"/> keeps them for the tab,
+    /// <see cref="ReDocTryItCredentialStorage.Local"/> in the browser until cleared. Either way
+    /// they are stored once for the whole app and shared by every document's page.
     /// </summary>
-    public bool PersistCredentials { get; set; }
+    /// <remarks>
+    /// Storing them turns on <see cref="ReDocDocumentsOptions.DefaultContentSecurityPolicy"/> for
+    /// the pages unless <see cref="ReDocDocumentsOptions.ContentSecurityPolicy"/> is set or your
+    /// own middleware sends a policy: an injected script is what would read a stored secret, and
+    /// <c>script-src 'self'</c> is what keeps one off the page.
+    /// </remarks>
+    public ReDocTryItCredentialStorage CredentialStorage { get; set; }
+
+    /// <summary>
+    /// How long stored credentials are kept after they were last typed, or
+    /// <see langword="null"/> to keep them until the viewer presses "Forget" or clears site data.
+    /// Defaults to 8 hours. Only matters when <see cref="CredentialStorage"/> stores them; checked
+    /// whenever the console opens.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">The value is zero or negative.</exception>
+    public TimeSpan? CredentialLifetime
+    {
+        get => credentialLifetime;
+        set
+        {
+            if (value is { } lifetime && lifetime <= TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(value), lifetime,
+                    "CredentialLifetime must be positive, or null to keep credentials until "
+                    + "they are forgotten.");
+            }
+
+            credentialLifetime = value;
+        }
+    }
+
+    private TimeSpan? credentialLifetime = TimeSpan.FromHours(8);
 
     /// <summary>
     /// Whether requests carry the viewer's cookies for this origin. Defaults to

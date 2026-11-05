@@ -223,11 +223,24 @@ internal sealed class ReDocSite
             pages,
             bundleRoute,
             plan.Redirect,
-            options.ContentSecurityPolicy,
+            PolicyFor(options),
             options.RememberLastDocument
                 ? new ReDocLastDocument(pages, prefix.Length == 0 ? string.Empty : $"/{prefix}")
                 : null);
     }
+
+    /// <summary>
+    /// The policy the pages are sent with. A try-it console that keeps credentials in browser
+    /// storage gets <see cref="ReDocDocumentsOptions.DefaultContentSecurityPolicy"/> when nothing
+    /// else was set: a stored secret is exactly what an injected script would come for, and
+    /// <c>script-src 'self'</c> is the defence that keeps one off the page. A policy the caller set
+    /// here, or one their own middleware put on the response, still wins.
+    /// </summary>
+    private static string? PolicyFor(ReDocDocumentsOptions options) =>
+        options.ContentSecurityPolicy
+        ?? (options.TryIt is { CredentialStorage: not ReDocTryItCredentialStorage.Memory }
+            ? ReDocDocumentsOptions.DefaultContentSecurityPolicy
+            : null);
 
     /// <summary>
     /// Why a document can't serve its own spec, named as the thing the caller has to fix. Thrown

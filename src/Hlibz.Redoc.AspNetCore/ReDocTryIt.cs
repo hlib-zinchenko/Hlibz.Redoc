@@ -39,9 +39,28 @@ internal static class ReDocTryIt
         $"<script type=\"module\" src=\"{FileName}\" data-hlibz-tryit"
         + $" data-spec-url=\"{WebUtility.HtmlEncode(specUrl)}\""
         + $" data-app-base=\"{ReDocRelativePath.Between(route, string.Empty)}\""
-        + (options.PersistCredentials ? " data-persist-credentials=\"true\"" : string.Empty)
+        + StorageAttribute(options.CredentialStorage)
+        + LifetimeAttribute(options)
         + (options.SendCookies ? string.Empty : " data-send-cookies=\"false\"")
         + "></script>\n";
+
+    // Whole seconds, at least one: the script compares it with Date.now(), and a lifetime set in
+    // ticks would otherwise round to an instant expiry.
+    private static string LifetimeAttribute(ReDocTryItOptions options) =>
+        options.CredentialStorage == ReDocTryItCredentialStorage.Memory
+        || options.CredentialLifetime is not { } lifetime
+            ? string.Empty
+            : FormattableString.Invariant(
+                $" data-credential-lifetime=\"{Math.Max(1L, (long)lifetime.TotalSeconds)}\"");
+
+    private static string StorageAttribute(ReDocTryItCredentialStorage storage) => storage switch
+    {
+        ReDocTryItCredentialStorage.Memory => string.Empty,
+        ReDocTryItCredentialStorage.Session => " data-credential-storage=\"session\"",
+        ReDocTryItCredentialStorage.Local => " data-credential-storage=\"local\"",
+        _ => throw new ArgumentOutOfRangeException(
+            nameof(storage), storage, "Not a ReDocTryItCredentialStorage value."),
+    };
 
     private static string Load(string resourceName)
     {

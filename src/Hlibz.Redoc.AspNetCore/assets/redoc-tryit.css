@@ -146,6 +146,29 @@ dialog.hlibz-tryit::backdrop { background: rgba(0, 0, 0, 0.35); }
   background: var(--input-bg-color, var(--bg-color, #fff));
   color: inherit;
 }
+/* "Saved for this tab / in this browser" and the button that clears it. */
+.hlibz-tryit-saved {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+.hlibz-tryit-forget {
+  font: inherit;
+  font-size: 0.85em;
+  margin-left: auto;
+  padding: 2px 10px;
+  border: 1px solid var(--border-color-primary, #d4d4d8);
+  border-radius: var(--border-radius, 6px);
+  background: transparent;
+  color: var(--text-color-secondary, #52525b);
+  cursor: pointer;
+}
+.hlibz-tryit-forget:hover {
+  border-color: var(--color-error-base, #dc2626);
+  color: var(--color-error-base, #dc2626);
+}
+
 /* A secret with its eye button inside the right edge of the input. */
 .hlibz-tryit-secret { position: relative; }
 .hlibz-tryit-secret .hlibz-tryit-input { padding-right: 36px; }

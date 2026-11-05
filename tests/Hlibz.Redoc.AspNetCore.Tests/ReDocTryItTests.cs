@@ -89,17 +89,151 @@ public partial class ReDocTryItTests
         await using ReDocTestApp changed = await ReDocTestApp.StartAsync(
             configure: options => options.EnableTryIt(tryIt =>
             {
-                tryIt.PersistCredentials = true;
+                tryIt.CredentialStorage = ReDocTryItCredentialStorage.Local;
                 tryIt.SendCookies = false;
             }));
 
         string plain = await defaults.GetStringAsync("/api-docs/locations/");
         string set = await changed.GetStringAsync("/api-docs/locations/");
 
-        Assert.DoesNotContain("data-persist-credentials", plain, StringComparison.Ordinal);
+        Assert.DoesNotContain("data-credential-storage", plain, StringComparison.Ordinal);
         Assert.DoesNotContain("data-send-cookies", plain, StringComparison.Ordinal);
-        Assert.Contains("data-persist-credentials=\"true\"", set, StringComparison.Ordinal);
+        Assert.Contains("data-credential-storage=\"local\"", set, StringComparison.Ordinal);
         Assert.Contains("data-send-cookies=\"false\"", set, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(ReDocTryItCredentialStorage.Memory, null)]
+    [InlineData(ReDocTryItCredentialStorage.Session, "session")]
+    [InlineData(ReDocTryItCredentialStorage.Local, "local")]
+    public async Task CredentialStorage_ReachesThePageAsTheScriptReadsIt(
+        ReDocTryItCredentialStorage storage, string? attribute)
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            configure: options => options.EnableTryIt(tryIt => tryIt.CredentialStorage = storage));
+
+        string page = await app.GetStringAsync("/api-docs/locations/");
+
+        if (attribute is null)
+        {
+            Assert.DoesNotContain("data-credential-storage", page, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Contains(
+                $"data-credential-storage=\"{attribute}\"", page, StringComparison.Ordinal);
+            // The value the script compares against, so a rename on either side fails here.
+            Assert.Contains($"config.storage === '{attribute}'", ReDocTryIt.Script,
+                StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void CredentialStorage_AnUndefinedValueFailsAtStartup()
+    {
+        ReDocTryItOptions options = new() { CredentialStorage = (ReDocTryItCredentialStorage)42 };
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => ReDocTryIt.Tag("/openapi/x.json", "api-docs/x", options));
+    }
+
+    [Theory]
+    [InlineData(ReDocTryItCredentialStorage.Memory, false)]
+    [InlineData(ReDocTryItCredentialStorage.Session, true)]
+    [InlineData(ReDocTryItCredentialStorage.Local, true)]
+    public async Task StoredCredentials_TurnTheDefaultPolicyOn(
+        ReDocTryItCredentialStorage storage, bool expectPolicy)
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            configure: options => options.EnableTryIt(tryIt => tryIt.CredentialStorage = storage));
+
+        HttpResponseMessage page = await app.GetAsync("/api-docs/locations/");
+
+        if (expectPolicy)
+        {
+            Assert.Equal(
+                ReDocDocumentsOptions.DefaultContentSecurityPolicy,
+                Assert.Single(page.Headers.GetValues("Content-Security-Policy")));
+        }
+        else
+        {
+            Assert.False(page.Headers.Contains("Content-Security-Policy"));
+        }
+    }
+
+    [Fact]
+    public async Task StoredCredentials_APolicyTheCallerSetStillWins()
+    {
+        const string policy = "default-src 'self'; connect-src 'self' https://api.example.com";
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            configure: options =>
+            {
+                options.ContentSecurityPolicy = policy;
+                options.EnableTryIt(
+                    tryIt => tryIt.CredentialStorage = ReDocTryItCredentialStorage.Local);
+            });
+
+        HttpResponseMessage page = await app.GetAsync("/api-docs/locations/");
+
+        Assert.Equal(policy, Assert.Single(page.Headers.GetValues("Content-Security-Policy")));
+    }
+
+    [Fact]
+    public async Task CredentialLifetime_DefaultsToEightHoursOnceStored()
+    {
+        await using ReDocTestApp memory = await ReDocTestApp.StartAsync(
+            configure: options => options.EnableTryIt());
+        await using ReDocTestApp local = await ReDocTestApp.StartAsync(
+            configure: options => options.EnableTryIt(
+                tryIt => tryIt.CredentialStorage = ReDocTryItCredentialStorage.Local));
+
+        // Nothing is stored in memory mode, so there is nothing to expire.
+        Assert.DoesNotContain(
+            "data-credential-lifetime",
+            await memory.GetStringAsync("/api-docs/locations/"),
+            StringComparison.Ordinal);
+        Assert.Contains(
+            "data-credential-lifetime=\"28800\"",
+            await local.GetStringAsync("/api-docs/locations/"),
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CredentialLifetime_ACallersValueReachesThePageAndNullMeansNoExpiry()
+    {
+        await using ReDocTestApp custom = await ReDocTestApp.StartAsync(
+            configure: options => options.EnableTryIt(tryIt =>
+            {
+                tryIt.CredentialStorage = ReDocTryItCredentialStorage.Session;
+                tryIt.CredentialLifetime = TimeSpan.FromMinutes(30);
+            }));
+        await using ReDocTestApp forever = await ReDocTestApp.StartAsync(
+            configure: options => options.EnableTryIt(tryIt =>
+            {
+                tryIt.CredentialStorage = ReDocTryItCredentialStorage.Local;
+                tryIt.CredentialLifetime = null;
+            }));
+
+        Assert.Contains(
+            "data-credential-lifetime=\"1800\"",
+            await custom.GetStringAsync("/api-docs/locations/"),
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "data-credential-lifetime",
+            await forever.GetStringAsync("/api-docs/locations/"),
+            StringComparison.Ordinal);
+        Assert.Contains("data-credential-lifetime", ReDocTryIt.Script, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-60)]
+    public void CredentialLifetime_ZeroOrNegativeThrows(int seconds)
+    {
+        ReDocTryItOptions options = new();
+
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => options.CredentialLifetime = TimeSpan.FromSeconds(seconds));
     }
 
     [Fact]
@@ -107,10 +241,11 @@ public partial class ReDocTryItTests
     {
         ReDocDocumentsOptions options = new();
 
-        options.EnableTryIt(tryIt => tryIt.PersistCredentials = true).EnableTryIt();
+        options.EnableTryIt(
+            tryIt => tryIt.CredentialStorage = ReDocTryItCredentialStorage.Session).EnableTryIt();
 
         Assert.NotNull(options.TryIt);
-        Assert.True(options.TryIt.PersistCredentials);
+        Assert.Equal(ReDocTryItCredentialStorage.Session, options.TryIt.CredentialStorage);
     }
 
     [Fact]

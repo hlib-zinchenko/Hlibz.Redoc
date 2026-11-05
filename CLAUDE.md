@@ -241,8 +241,16 @@ takes one project at a time.
       ReDoc's state. Auth schemes and body media types go through two registries in the script
       (`registerAuth`, `registerBody`); adding one is an entry, not a rewrite. They are internal
       on purpose — no `window` API until they have settled.
-    - Credentials are in memory, or `sessionStorage` with `PersistCredentials`, never
-      `localStorage`. Everything from the spec or a response goes in through `textContent`.
+    - Credentials are in memory by default; `CredentialStorage` (`Session`/`Local`) puts them in
+      `sessionStorage` or `localStorage` under **one key per app** (the app base's path), not per
+      spec, so the picker's documents share them — keyed by scheme name inside. They are re-read
+      on every drawer open, so another tab's save shows up — and dropped there once past
+      `CredentialLifetime` (default 8 h, sliding from the last change, `null` = never), stored as
+      `{ expires, credentials }`. Storing them makes `ReDocSite.PolicyFor` fall back to
+      `DefaultContentSecurityPolicy` when no policy was set: a stored secret is what an injected
+      script would come for. Encryption at rest was considered and rejected — the page must
+      decrypt without asking, so the key sits beside the ciphertext. Everything from the spec or a
+      response goes in through `textContent`.
     - What the C# suite can't reach is the script's behaviour; `ReDocTryItTests` covers the
       server half only. A change to the script wants `Sample.Own` open: send POST /widgets with
       and without a token (401, then 201).

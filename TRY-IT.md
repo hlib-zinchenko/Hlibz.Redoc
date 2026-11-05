@@ -72,7 +72,7 @@ a frozen bundle.
 options.EnableTryIt();                       // off by default
 options.EnableTryIt(tryIt =>
 {
-    tryIt.PersistCredentials = false;        // default: memory only, gone on reload
+    tryIt.CredentialStorage = ReDocTryItCredentialStorage.Memory; // default; or Session, Local
 });
 ```
 
@@ -137,8 +137,12 @@ covers the whole page, keyed by scheme name.
 
 ### Security, stated rather than chased
 
-- **Credentials**: in memory by default. `PersistCredentials` opts in to `sessionStorage`, never
-  `localStorage`. Nothing is logged. Password-type inputs throughout.
+- **Credentials**: in memory by default. `CredentialStorage` opts in to `sessionStorage` or, at
+  the user's request, `localStorage`, stored once per app so documents share them, with a Forget
+  button and a `CredentialLifetime` (default 8 hours after the last change). Storing turns on the
+  default CSP when the site set none. Encrypting the stored value was rejected: the page has to
+  decrypt it unprompted, so the key would sit beside it. Nothing is logged. Password-type inputs,
+  each with a show/hide eye.
 - **Rendering**: response bodies and headers go in via `textContent` only. Spec descriptions are
   not rendered in the drawer at all. A response is attacker-influenced data on our origin.
 - **Cookies ride along**: a same-origin `fetch` sends the viewer's cookies. A viewer signed in to

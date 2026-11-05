@@ -23,12 +23,16 @@
   var config = {
     specUrl: self.getAttribute('data-spec-url'),
     appBase: new URL(self.getAttribute('data-app-base') || './', location.href).href,
-    persist: self.getAttribute('data-persist-credentials') === 'true',
+    storage: self.getAttribute('data-credential-storage'),
+    // Seconds stored credentials last after they were last typed; absent means until forgotten.
+    lifetime: Number(self.getAttribute('data-credential-lifetime')) || 0,
     cookies: self.getAttribute('data-send-cookies') !== 'false',
   };
 
   var METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace', 'query'];
-  var STORAGE_KEY = 'hlibz.tryit:' + new URL(config.specUrl, location.href).pathname;
+  // One key for the whole app, not one per page, so what a viewer typed on one document is there
+  // on every other document the picker leads to.
+  var STORAGE_KEY = 'hlibz.tryit.credentials:' + new URL(config.appBase).pathname;
 
   // ---------------------------------------------------------------------------------------------
   // Small helpers
@@ -351,22 +355,76 @@
   }
 
   // Credentials are per security scheme, so one token covers every operation on the page. Kept in
-  // memory unless the site opted in to sessionStorage; never localStorage.
-  var credentials = {};
-  if (config.persist) {
+  // memory unless the site chose sessionStorage or localStorage.
+  function credentialStore() {
     try {
-      credentials = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || '{}') || {};
-    } catch (e) { credentials = {}; }
+      return config.storage === 'local' ? localStorage
+        : config.storage === 'session' ? sessionStorage
+        : null;
+    } catch (e) {
+      return null; // storage blocked by the browser: memory only
+    }
   }
 
+  var credentials = {};
+
+  // Stored as { expires, credentials }, expires being epoch milliseconds or null. Read again on
+  // every open, so a key saved in another tab (localStorage) is picked up and an expired one is
+  // dropped — from memory too, so an open page doesn't keep sending it.
+  function loadCredentials() {
+    var store = credentialStore();
+    if (!store) {
+      return;
+    }
+    var saved = null;
+    try {
+      saved = JSON.parse(store.getItem(STORAGE_KEY) || 'null');
+    } catch (e) { /* unreadable: treated as nothing saved */ }
+    if (!saved || typeof saved !== 'object' || !saved.credentials
+        || typeof saved.credentials !== 'object') {
+      return;
+    }
+    if (typeof saved.expires === 'number' && saved.expires <= Date.now()) {
+      forgetCredentials();
+      return;
+    }
+    credentials = saved.credentials;
+  }
+
+  // Every change restarts the lifetime: it runs from when the viewer last typed.
   function saveCredentials() {
-    if (!config.persist) {
+    var store = credentialStore();
+    if (!store) {
       return;
     }
     try {
-      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(credentials));
-    } catch (e) { /* storage unavailable: memory only */ }
+      store.setItem(STORAGE_KEY, JSON.stringify({
+        expires: config.lifetime ? Date.now() + config.lifetime * 1000 : null,
+        credentials: credentials,
+      }));
+    } catch (e) { /* storage full or blocked: memory only */ }
   }
+
+  function describeLifetime(seconds) {
+    var units = [[86400, 'day'], [3600, 'hour'], [60, 'minute'], [1, 'second']];
+    for (var i = 0; i < units.length; i++) {
+      if (seconds >= units[i][0] && seconds % units[i][0] === 0) {
+        var n = seconds / units[i][0];
+        return n + ' ' + units[i][1] + (n === 1 ? '' : 's');
+      }
+    }
+    return seconds + ' seconds';
+  }
+
+  function forgetCredentials() {
+    credentials = {};
+    var store = credentialStore();
+    if (store) {
+      try { store.removeItem(STORAGE_KEY); } catch (e) { /* nothing to remove */ }
+    }
+  }
+
+  loadCredentials();
 
   // Every scheme any of the operation's requirements names. Values are applied for whichever the
   // viewer filled in, which covers both "A or B" and "A and B" without asking them to pick.
@@ -566,6 +624,7 @@
 
   function open(entry, opener) {
     ensureDialog();
+    loadCredentials();
     if (inflight) {
       inflight.abort();
       inflight = null;
@@ -587,8 +646,28 @@
     // Auth
     var authSection = null;
     if (schemes.length) {
+      var store = credentialStore();
+      var forget = store ? h('div', { class: 'hlibz-tryit-saved' },
+        h('span', {
+          class: 'hlibz-tryit-hint',
+          text: (store === sessionStorage ? 'Saved for this tab' : 'Saved in this browser')
+            + (config.lifetime ? ' for ' + describeLifetime(config.lifetime) + ' after the last change' : '')
+            + ', on every page of these docs.',
+        }),
+        h('button', {
+          type: 'button',
+          class: 'hlibz-tryit-forget',
+          text: 'Forget',
+          onclick: function () {
+            forgetCredentials();
+            authSection.querySelectorAll('input[data-scheme]').forEach(function (i) {
+              i.value = '';
+            });
+          },
+        })) : null;
       authSection = h('section', { class: 'hlibz-tryit-section' },
         h('h3', { text: 'Authorization' }),
+        forget,
         schemes.map(function (s) {
           if (!s.handler) {
             return h('p', { class: 'hlibz-tryit-hint', text: s.name + ': ' + (s.scheme.type || 'unknown') + ' is not supported here.' });
@@ -601,8 +680,10 @@
               autocomplete: 'off',
               spellcheck: 'false',
               value: values[f.name] || '',
+              'data-scheme': s.name,
               oninput: function (e) {
-                values[f.name] = e.target.value;
+                // Through credentials rather than a captured object, which Forget replaces.
+                (credentials[s.name] || (credentials[s.name] = {}))[f.name] = e.target.value;
                 saveCredentials();
               },
             });
