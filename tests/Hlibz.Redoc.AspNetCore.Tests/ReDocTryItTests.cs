@@ -103,6 +103,26 @@ public partial class ReDocTryItTests
     }
 
     [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task SafeMethodsOnly_ReachesThePageAsTheScriptReadsIt(bool safeOnly, bool expect)
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync(
+            configure: options => options.EnableTryIt(tryIt => tryIt.SafeMethodsOnly = safeOnly));
+
+        string page = await app.GetStringAsync("/api-docs/locations/");
+
+        Assert.Equal(
+            expect,
+            page.Contains("data-safe-methods-only=\"true\"", StringComparison.Ordinal));
+        // What the script compares against, so a rename on either side fails here.
+        Assert.Contains(
+            "getAttribute('data-safe-methods-only') === 'true'",
+            ReDocTryIt.Script,
+            StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData(ReDocTryItCredentialStorage.Memory, null)]
     [InlineData(ReDocTryItCredentialStorage.Session, "session")]
     [InlineData(ReDocTryItCredentialStorage.Local, "local")]

@@ -261,10 +261,10 @@ textarea.hlibz-tryit-code { resize: vertical; tab-size: 2; }
   gap: 8px;
   margin: 6px 0;
 }
-.hlibz-tryit-copy {
+/* The small outlined buttons: Copy, Copy as cURL, Reset to example, Cancel, Download. */
+.hlibz-tryit-ghost {
   font: inherit;
   font-size: 0.85em;
-  margin-left: auto;
   padding: 3px 12px;
   border: 1px solid var(--border-color-primary, #d4d4d8);
   border-radius: var(--border-radius, 6px);
@@ -272,7 +272,15 @@ textarea.hlibz-tryit-code { resize: vertical; tab-size: 2; }
   color: var(--text-color-secondary, #52525b);
   cursor: pointer;
 }
-.hlibz-tryit-copy:hover { color: var(--text-color-primary, #18181b); }
+.hlibz-tryit-ghost:hover { color: var(--text-color-primary, #18181b); }
+/* Pushed to the end of its flex row. */
+.hlibz-tryit-push { margin-left: auto; }
+.hlibz-tryit-meaning { margin: 6px 0 0; }
+.hlibz-tryit-undocumented {
+  margin: 6px 0 0;
+  font-size: 0.85em;
+  color: var(--color-warning-base, #d97706);
+}
 .hlibz-tryit-offscreen { position: fixed; top: 0; left: -9999px; opacity: 0; }
 
 /* The folding JSON view. Indentation is padding, so a copied selection carries no stray spaces;
@@ -322,8 +330,9 @@ textarea.hlibz-tryit-code { resize: vertical; tab-size: 2; }
 .hlibz-tryit-json-boolean { color: var(--color-warning-base, #d97706); }
 .hlibz-tryit-json-null { color: var(--text-color-secondary, #71717a); }
 /* The hidden attribute is the browser stylesheet's display: none, which any display on a class of
-   ours would outrank. None here sets one today; this keeps it that way. */
-.hlibz-tryit-json [hidden] { display: none; }
+   ours would outrank. Covers the whole console (the folded JSON, the Cancel button), so a display
+   added to one of its classes later can't put a hidden thing back on screen. */
+.hlibz-tryit [hidden] { display: none; }
 
 .hlibz-tryit-modes {
   display: inline-flex;

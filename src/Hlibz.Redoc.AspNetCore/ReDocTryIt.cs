@@ -42,6 +42,7 @@ internal static class ReDocTryIt
         + StorageAttribute(options.CredentialStorage)
         + LifetimeAttribute(options)
         + (options.SendCookies ? string.Empty : " data-send-cookies=\"false\"")
+        + (options.SafeMethodsOnly ? " data-safe-methods-only=\"true\"" : string.Empty)
         + "></script>\n";
 
     // Whole seconds, at least one: the script compares it with Date.now(), and a lifetime set in

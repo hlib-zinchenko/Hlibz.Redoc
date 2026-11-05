@@ -251,6 +251,14 @@ takes one project at a time.
       script would come for. Encryption at rest was considered and rejected — the page must
       decrypt without asking, so the key sits beside the ciphertext. Everything from the spec or a
       response goes in through `textContent`.
+    - Drafts (what was typed per operation, plus the last *finished* response's DOM nodes) live
+      in memory and are saved by `open()` for the panel it is about to replace — **not** on the
+      dialog's `close` event, which is queued: in the browser pane it once landed after the next
+      `open()` had run, losing the draft. The `close` handler drops out when the dialog is open
+      again for the same reason. Responses
+      are read as bytes, not text, so a binary one can be offered as a download. Two traps:
+      `replaceChildren` writes a `null` argument out as the text "null" where `h()` skips it, and
+      `.hlibz-tryit [hidden]` covers the whole console for the same reason as the picker's rule.
     - What the C# suite can't reach is the script's behaviour; `ReDocTryItTests` covers the
       server half only. A change to the script wants `Sample.Own` open: send POST /widgets with
       and without a token (401, then 201).
@@ -380,7 +388,10 @@ takes one project at a time.
     `GenerateAsync`. The provider's *own* spelling of the name is what gets passed back to it
     (matching is case-insensitive, Swashbuckle's lookup is not), and the document is buffered
     rather than streamed so a generator that throws half-way produces a 500 rather than a 200
-    carrying half a document.
+    carrying half a document. The buffer is a `StringWriter` on the **invariant culture**: the
+    document writer formats numbers through `TextWriter.Write(decimal)`, so on a server whose
+    culture writes a decimal comma, `129.99` came out as `129,99` and the whole spec stopped being
+    JSON. Integers are unaffected, which is why nothing showed it until the sample grew a price.
   - `OpenApiDocumentNames` (internal) backs `ReDocDocumentsOptionsBase.ValidateDocumentNames` (on by
     default): a configured name that isn't a registered OpenAPI document throws at startup instead
     of serving a page whose spec 404s. It resolves the *internal*
@@ -416,7 +427,9 @@ takes one project at a time.
   surface ReDoc's alternating nested-schema background bug, every `widgets` endpoint documents a
   `500` response alongside its own negative response (`400`/`404`) with a distinct model to check
   multiple response-schema/status-tab combinations render correctly, and every property carries a
-  `[Description]` so field descriptions are visible everywhere. It's a plain `Microsoft.NET.Sdk`
+  `[Description]` so field descriptions are visible everywhere. `POST /widgets` carries three
+  named request examples (two accepted, one the 400 for a zero price), for ReDoc's example
+  dropdown and the try-it console's picker. It's a plain `Microsoft.NET.Sdk`
   library, so the minimal-API extension methods the web-SDK samples get implicitly are imported by
   hand.
 - `samples/Sample.Own/` (:5499) — the same shared documents on our own host. Its `Program.cs` sets

@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Reflection;
 
 using Microsoft.Extensions.DependencyInjection;
@@ -132,7 +133,10 @@ internal sealed class OpenApiSpecSource
                 + $"'{documentName}' cannot be generated. It was registered when the pages were "
                 + "mapped.");
 
-        using StringWriter json = new();
+        // Invariant, not the server's culture: the document's writer formats numbers through
+        // TextWriter.Write(decimal), which uses this writer's culture, so a server whose culture
+        // writes a decimal comma turned 129.99 into "129,99" and the document into invalid JSON.
+        using StringWriter json = new(CultureInfo.InvariantCulture);
         if (generate.Invoke(provider, [documentName, json]) is Task task)
         {
             await task.ConfigureAwait(false);

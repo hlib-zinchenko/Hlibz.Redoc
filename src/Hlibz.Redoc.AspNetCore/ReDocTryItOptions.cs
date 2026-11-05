@@ -69,4 +69,16 @@ public sealed class ReDocTryItOptions
     /// the console.
     /// </summary>
     public bool SendCookies { get; set; } = true;
+
+    /// <summary>
+    /// Whether only operations with a safe HTTP method — <c>GET</c>, <c>HEAD</c>,
+    /// <c>OPTIONS</c>, <c>TRACE</c> and <c>QUERY</c> — get a "Try it" button. Defaults to
+    /// <see langword="false"/>: every operation gets one.
+    /// </summary>
+    /// <remarks>
+    /// For docs in front of a real system, where a viewer pressing Send on <c>DELETE</c> with
+    /// their own cookies attached would make a real change. It is a convenience and <b>not</b>
+    /// access control: the API still accepts whatever anyone sends it with any other client.
+    /// </remarks>
+    public bool SafeMethodsOnly { get; set; }
 }

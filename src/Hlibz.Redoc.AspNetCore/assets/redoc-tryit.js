@@ -27,9 +27,12 @@
     // Seconds stored credentials last after they were last typed; absent means until forgotten.
     lifetime: Number(self.getAttribute('data-credential-lifetime')) || 0,
     cookies: self.getAttribute('data-send-cookies') !== 'false',
+    safeOnly: self.getAttribute('data-safe-methods-only') === 'true',
   };
 
   var METHODS = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace', 'query'];
+  // Safe in RFC 9110's sense (QUERY by its draft): a request that asks, never one that changes.
+  var SAFE_METHODS = ['get', 'head', 'options', 'trace', 'query'];
   // One key for the whole app, not one per page, so what a viewer typed on one document is there
   // on every other document the picker leads to.
   var STORAGE_KEY = 'hlibz.tryit.credentials:' + new URL(config.appBase).pathname;
@@ -260,20 +263,39 @@
     }
   }
 
-  // The example a media type entry declares, before falling back to its schema.
-  function mediaExample(media) {
+  // The named examples a media type or parameter declares that carry a value inline, in order, as
+  // { key, label }. One that points at an externalValue is left out: fetching it is another
+  // origin's business and another CSP hole.
+  function namedExamples(holder) {
+    var examples = holder && holder.examples;
+    if (!examples || typeof examples !== 'object' || Array.isArray(examples)) {
+      return [];
+    }
+    return Object.keys(examples).filter(function (key) {
+      var ex = deref(examples[key]);
+      return ex && ex.value !== undefined;
+    }).map(function (key) {
+      var summary = deref(examples[key]).summary;
+      return { key: key, label: summary ? summary + ' (' + key + ')' : key };
+    });
+  }
+
+  // The example a media type entry declares — the named one asked for, else its example, else its
+  // first named one — before falling back to its schema.
+  function mediaExample(media, name) {
     if (!media) {
       return undefined;
+    }
+    var named = namedExamples(media);
+    var chosen = named.filter(function (n) { return n.key === name; })[0];
+    if (chosen) {
+      return deref(media.examples[chosen.key]).value;
     }
     if (media.example !== undefined) {
       return media.example;
     }
-    if (media.examples) {
-      var first = Object.keys(media.examples)[0];
-      var ex = first && deref(media.examples[first]);
-      if (ex && ex.value !== undefined) {
-        return ex.value;
-      }
+    if (named.length) {
+      return deref(media.examples[named[0].key]).value;
     }
     return sampleOf(media.schema);
   }
@@ -457,8 +479,8 @@
 
   registerBody({
     matches: function (type) { return /^application\/([\w.-]+\+)?json$/i.test(type); },
-    initial: function (media) {
-      var example = mediaExample(media);
+    initial: function (media, exampleName) {
+      var example = mediaExample(media, exampleName);
       return example === undefined ? '' : JSON.stringify(example, null, 2);
     },
     encode: function (text) {
@@ -467,6 +489,52 @@
       }
       JSON.parse(text);
       return text;
+    },
+  });
+
+  // A form body is edited as one name=value per line, unencoded, which reads far better than the
+  // encoded wire form and is what URLSearchParams turns into it. An array becomes one line per
+  // item (form style, exploded: OpenAPI's default for a form field); a nested object goes as JSON,
+  // which is what most servers that accept one at all expect.
+  registerBody({
+    matches: function (type) { return /^application\/x-www-form-urlencoded$/i.test(type); },
+    hint: 'One name=value per line. Values are URL-encoded when sent.',
+    initial: function (media, exampleName) {
+      var example = mediaExample(media, exampleName);
+      if (typeof example === 'string') {
+        // Already in wire form: shown decoded, one field per line.
+        return Array.from(new URLSearchParams(example)).map(function (pair) {
+          return pair[0] + '=' + pair[1];
+        }).join('\n');
+      }
+      if (!example || typeof example !== 'object' || Array.isArray(example)) {
+        return '';
+      }
+      var lines = [];
+      Object.keys(example).forEach(function (name) {
+        [].concat(example[name]).forEach(function (value) {
+          lines.push(name + '=' + (value !== null && typeof value === 'object'
+            ? JSON.stringify(value) : String(value === null ? '' : value)));
+        });
+      });
+      return lines.join('\n');
+    },
+    encode: function (text) {
+      var form = new URLSearchParams();
+      text.split(/\r?\n/).forEach(function (line) {
+        if (line.trim() === '') {
+          return;
+        }
+        // The name is trimmed, since stray indentation is never meant; the value is sent exactly.
+        var at = line.indexOf('=');
+        var name = (at < 0 ? line : line.slice(0, at)).trim();
+        if (!name) {
+          throw new Error('"' + line.trim() + '" has no name before its "=".');
+        }
+        form.append(name, at < 0 ? '' : line.slice(at + 1));
+      });
+      var encoded = form.toString();
+      return encoded === '' ? undefined : encoded;
     },
   });
 
@@ -492,7 +560,9 @@
   // Servers
 
   function serversFor(entry) {
-    var declared = entry.op.servers || (spec.paths[entry.path] || {}).servers || spec.servers;
+    // The path item through deref, as operationFor reads it: a $ref'd item keeps its servers.
+    var declared = entry.op.servers || (deref(spec.paths[entry.path]) || {}).servers
+      || spec.servers;
     var list = [];
     (declared || []).forEach(function (server) {
       if (!server || typeof server.url !== 'string') {
@@ -524,6 +594,40 @@
   var current = null;
   var inflight = null;
 
+  // What the viewer typed into each operation, and the last response it got, so reopening the same
+  // operation picks up where it left off. Memory only, like the default for credentials: a reload
+  // starts over. Saved by open() for the panel it replaces, synchronously, rather than on the
+  // dialog's close event, which is queued and so isn't guaranteed to land before the next open.
+  var drafts = {};
+
+  function draftKey(entry) {
+    return entry.method + ' ' + entry.path;
+  }
+
+  function paramKey(p) {
+    return p.in + ':' + p.name;
+  }
+
+  // The response is kept only once it is finished — shown, failed or cancelled — never a
+  // "Sending…" that the close aborted.
+  function saveDraft(state) {
+    var draft = { server: state.server.value, params: {}, body: null, response: null };
+    state.params.forEach(function (item) {
+      draft.params[paramKey(item.param)] = item.input.value;
+    });
+    if (state.body) {
+      draft.body = {
+        type: state.body.typeSelect.value,
+        example: state.body.exampleSelect.value,
+        text: state.body.editor.value,
+      };
+    }
+    if (state.responseDone) {
+      draft.response = Array.prototype.slice.call(state.response.childNodes);
+    }
+    drafts[draftKey(state.entry)] = draft;
+  }
+
   function ensureDialog() {
     if (dialog) {
       return dialog;
@@ -541,6 +645,11 @@
       }
     });
     dialog.addEventListener('close', function () {
+      // The event is queued: if the console has been opened again since, this one is stale, and
+      // the request and focus it would act on belong to the new panel.
+      if (dialog.open) {
+        return;
+      }
       if (inflight) {
         inflight.abort();
         inflight = null;
@@ -612,7 +721,10 @@
   }
 
   function paramDefault(p) {
-    var value = p.example !== undefined ? p.example : sampleOf(p.schema);
+    var named = namedExamples(p);
+    var value = p.example !== undefined ? p.example
+      : named.length ? deref(p.examples[named[0].key]).value
+      : sampleOf(p.schema);
     if (value === undefined || value === null) {
       return '';
     }
@@ -622,9 +734,32 @@
     return typeof value === 'object' ? JSON.stringify(value) : String(value);
   }
 
+  // The values a single-valued enum or boolean parameter can take, as the strings a <select>
+  // offers, or null for anything typed freely. An array of enums stays a comma-separated text box.
+  function choicesOf(p) {
+    var schema = deref(p.schema) || {};
+    var types = [].concat(schema.type || []);
+    if (types.indexOf('array') >= 0) {
+      return null;
+    }
+    var values = Array.isArray(schema.enum) ? schema.enum
+      : types.indexOf('boolean') >= 0 ? [true, false]
+      : null;
+    if (!values) {
+      return null;
+    }
+    values = values
+      .filter(function (v) { return v !== null && typeof v !== 'object'; })
+      .map(String);
+    return values.length ? values : null;
+  }
+
   function open(entry, opener) {
     ensureDialog();
     loadCredentials();
+    if (current) {
+      saveDraft(current);
+    }
     if (inflight) {
       inflight.abort();
       inflight = null;
@@ -635,12 +770,16 @@
     var schemes = schemesFor(op);
     var state = { entry: entry, opener: opener, params: [], auth: [], body: null, server: null };
     current = state;
+    var draft = drafts[draftKey(entry)] || null;
 
     // Server
     var serverSelect = h('select', { class: 'hlibz-tryit-input' },
       servers.list.map(function (s) {
         return h('option', { value: s.url, selected: s.url === servers.selected, text: s.label === s.url ? s.url : s.label + ' — ' + s.url });
       }));
+    if (draft && servers.list.some(function (s) { return s.url === draft.server; })) {
+      serverSelect.value = draft.server;
+    }
     state.server = serverSelect;
 
     // Auth
@@ -706,16 +845,25 @@
       return h('section', { class: 'hlibz-tryit-section' },
         h('h3', { text: groups[where] }),
         list.map(function (p) {
-          var input = h('input', {
-            class: 'hlibz-tryit-input',
-            type: 'text',
-            spellcheck: 'false',
-            value: paramDefault(p),
-            required: !!p.required || where === 'path',
-          });
+          var required = !!p.required || where === 'path';
+          var choices = choicesOf(p);
+          var input = choices
+            ? h('select', { class: 'hlibz-tryit-input', required: required },
+              // An optional parameter can be left out, which a select needs a way to say.
+              required ? null : h('option', { value: '', text: '— not sent —' }),
+              choices.map(function (c) { return h('option', { value: c, text: c }); }))
+            : h('input', {
+              class: 'hlibz-tryit-input',
+              type: 'text',
+              spellcheck: 'false',
+              required: required,
+            });
+          input.value = draft && paramKey(p) in draft.params
+            ? draft.params[paramKey(p)]
+            : paramDefault(p);
           state.params.push({ param: p, input: input });
           var label = h('span', null, h('code', { text: p.name }),
-            (p.required || where === 'path') ? h('span', { class: 'hlibz-tryit-required', text: ' required' }) : null);
+            required ? h('span', { class: 'hlibz-tryit-required', text: ' required' }) : null);
           var schema = deref(p.schema) || {};
           var hint = [schema.type, schema.format].filter(Boolean).join(', ')
             + (schema.type === 'array' ? ' — comma-separated' : '');
@@ -735,32 +883,111 @@
       if (preferred) {
         typeSelect.value = preferred;
       }
+      if (draft && draft.body && types.indexOf(draft.body.type) >= 0) {
+        typeSelect.value = draft.body.type;
+      }
       var editor = h('textarea', { class: 'hlibz-tryit-input hlibz-tryit-code', rows: 12, spellcheck: 'false' });
       var note = h('span', { class: 'hlibz-tryit-hint' });
+      // Offered only when the media type names more than one example; each type has its own.
+      var exampleSelect = h('select', { class: 'hlibz-tryit-input' });
+      var exampleField = field('Example', exampleSelect);
+      var listExamples = function () {
+        var named = namedExamples(requestBody.content[typeSelect.value]);
+        exampleSelect.replaceChildren.apply(exampleSelect, named.map(function (n) {
+          return h('option', { value: n.key, text: n.label });
+        }));
+        exampleField.hidden = named.length < 2;
+      };
       var fill = function () {
         var handler = bodyHandlerFor(typeSelect.value);
-        editor.value = handler.initial(requestBody.content[typeSelect.value]);
-        note.textContent = handler.raw ? 'Sent as typed: this media type has no editor here yet.' : '';
+        editor.value = handler.initial(
+          requestBody.content[typeSelect.value], exampleSelect.value || undefined);
+        note.textContent = handler.raw
+          ? 'Sent as typed: this media type has no editor here yet.'
+          : handler.hint || '';
       };
-      typeSelect.addEventListener('change', fill);
+      typeSelect.addEventListener('change', function () {
+        listExamples();
+        fill();
+      });
+      exampleSelect.addEventListener('change', fill);
+      listExamples();
+      if (draft && draft.body && draft.body.type === typeSelect.value && draft.body.example
+          && namedExamples(requestBody.content[typeSelect.value])
+            .some(function (n) { return n.key === draft.body.example; })) {
+        exampleSelect.value = draft.body.example;
+      }
       fill();
-      state.body = { typeSelect: typeSelect, editor: editor, required: !!requestBody.required };
+      if (draft && draft.body && draft.body.type === typeSelect.value) {
+        editor.value = draft.body.text;
+      }
+      state.body = {
+        typeSelect: typeSelect,
+        exampleSelect: exampleSelect,
+        editor: editor,
+        required: !!requestBody.required,
+      };
       bodySection = h('section', { class: 'hlibz-tryit-section' },
         h('h3', null, 'Body', requestBody.required ? h('span', { class: 'hlibz-tryit-required', text: ' required' }) : null),
         types.length > 1 ? field('Content type', typeSelect) : h('p', { class: 'hlibz-tryit-hint', text: types[0] }),
+        exampleField,
         editor,
-        note);
+        h('div', { class: 'hlibz-tryit-body-bar' },
+          note,
+          h('button', {
+            type: 'button',
+            class: 'hlibz-tryit-ghost hlibz-tryit-push',
+            text: 'Reset to example',
+            onclick: function () {
+              fill();
+              editor.focus();
+            },
+          })));
     }
 
     var method = entry.method.toUpperCase();
     var sendButton = h('button', {
       type: 'button',
-      class: 'hlibz-tryit-send' + (entry.method === 'get' || entry.method === 'head' ? '' : ' hlibz-tryit-send-unsafe'),
+      class: 'hlibz-tryit-send' + (SAFE_METHODS.indexOf(entry.method) >= 0 ? '' : ' hlibz-tryit-send-unsafe'),
       onclick: send,
       text: 'Send ' + method + ' request',
     });
     state.sendButton = sendButton;
+    state.cancelButton = h('button', {
+      type: 'button',
+      class: 'hlibz-tryit-ghost',
+      text: 'Cancel',
+      hidden: true,
+      onclick: function () {
+        if (inflight && current === state) {
+          state.cancelled = true;
+          inflight.abort();
+        }
+      },
+    });
+    var curlButton = h('button', {
+      type: 'button',
+      class: 'hlibz-tryit-ghost hlibz-tryit-push',
+      text: 'Copy as cURL',
+      title: 'Includes the credentials typed here. The browser\'s cookies are not included.',
+      onclick: function () {
+        var req;
+        try {
+          req = buildRequest(state);
+        } catch (e) {
+          showError(e.message);
+          return;
+        }
+        copyText(curlOf(entry.method, req)).then(
+          function () { flash(curlButton, 'Copied'); },
+          function () { flash(curlButton, 'Copy failed'); });
+      },
+    });
     state.response = h('div', { class: 'hlibz-tryit-response', 'aria-live': 'polite' });
+    if (draft && draft.response) {
+      state.response.replaceChildren.apply(state.response, draft.response);
+      state.responseDone = true;
+    }
 
     dialog.replaceChildren(
       h('header', { class: 'hlibz-tryit-header' },
@@ -775,7 +1002,9 @@
         bodySection,
         h('div', { class: 'hlibz-tryit-actions' },
           sendButton,
-          h('span', { class: 'hlibz-tryit-hint', text: (navigator.platform.indexOf('Mac') >= 0 ? '⌘' : 'Ctrl') + '+Enter' })),
+          state.cancelButton,
+          h('span', { class: 'hlibz-tryit-hint', text: (navigator.platform.indexOf('Mac') >= 0 ? '⌘' : 'Ctrl') + '+Enter' }),
+          curlButton),
         state.response));
 
     if (!dialog.open) {
@@ -792,6 +1021,7 @@
 
   function showError(message) {
     current.response.replaceChildren(h('p', { class: 'hlibz-tryit-error', role: 'alert', text: message }));
+    current.responseDone = true;
   }
 
   function buildRequest(state) {
@@ -877,10 +1107,14 @@
     }
     var controller = new AbortController();
     inflight = controller;
+    state.cancelled = false;
+    state.responseDone = false;
     state.sendButton.disabled = true;
+    state.cancelButton.hidden = false;
     state.response.replaceChildren(h('p', { class: 'hlibz-tryit-hint', text: 'Sending…' }));
 
     var started = performance.now();
+    var arrived = false;
     fetch(req.url.href, {
       method: state.entry.method.toUpperCase(),
       headers: req.headers,
@@ -888,27 +1122,71 @@
       credentials: config.cookies ? 'same-origin' : 'omit',
       signal: controller.signal,
     }).then(function (response) {
-      return response.text().then(function (text) {
+      arrived = true;
+      // Bytes rather than text, so a binary body can be measured and offered as a file instead of
+      // being decoded into noise.
+      return response.arrayBuffer().then(function (bytes) {
         if (current === state) {
-          renderResponse(state, response, text, performance.now() - started, req.url);
+          renderResponse(state, response, bytes, performance.now() - started, req.url);
         }
       });
-    }, function (error) {
-      if (error && error.name === 'AbortError') {
+    }).catch(function (error) {
+      if (current !== state) {
         return;
       }
-      if (current === state) {
-        showError(req.url.origin === location.origin
+      if (error && error.name === 'AbortError') {
+        // Aborted by Cancel; otherwise by a newer Send or by closing, which show their own thing.
+        if (state.cancelled) {
+          state.response.replaceChildren(h('p', { class: 'hlibz-tryit-hint', text: 'Cancelled.' }));
+          state.responseDone = true;
+        }
+        return;
+      }
+      showError(arrived
+        ? 'The response arrived but could not be read: ' + error.message
+        : req.url.origin === location.origin
           ? 'The request failed before a response arrived: ' + error.message
           : 'The request to ' + req.url.origin + ' was blocked. Another origin has to allow it '
             + 'with CORS, and this page\'s Content-Security-Policy has to list it in connect-src.');
-      }
     }).finally(function () {
       if (inflight === controller) {
         inflight = null;
       }
-      state.sendButton.disabled = false;
+      // A newer Send has the buttons now; anything else (done, cancelled, closed) gives them back.
+      if (!inflight) {
+        state.sendButton.disabled = false;
+        state.cancelButton.hidden = true;
+      }
     });
+  }
+
+  // The request as a curl command line, for a terminal. POSIX single quotes, inside which nothing
+  // is special but the quote itself.
+  function shellQuote(text) {
+    return '\'' + String(text).replace(/'/g, '\'\\\'\'') + '\'';
+  }
+
+  function curlOf(method, req) {
+    var parts = ['curl'
+      + (method === 'head' ? ' --head' : method === 'get' ? '' : ' -X ' + method.toUpperCase())
+      + ' ' + shellQuote(req.url.href)];
+    req.headers.forEach(function (value, name) {
+      parts.push('-H ' + shellQuote(name + ': ' + value));
+    });
+    if (req.body !== undefined) {
+      parts.push('--data-raw ' + shellQuote(req.body));
+    }
+    return parts.join(' \\\n  ');
+  }
+
+  // A button's label briefly replaced by what just happened to it.
+  function flash(button, message) {
+    if (!button.hlibzLabel) {
+      button.hlibzLabel = button.textContent;
+    }
+    button.textContent = message;
+    clearTimeout(button.hlibzTimer);
+    button.hlibzTimer = setTimeout(function () { button.textContent = button.hlibzLabel; }, 1500);
   }
 
   // Raw or pretty, for a JSON response body. One choice for the whole page, so it sticks while you
@@ -1037,20 +1315,14 @@
 
     var copy = h('button', {
       type: 'button',
-      class: 'hlibz-tryit-copy',
+      class: 'hlibz-tryit-ghost hlibz-tryit-push',
       text: 'Copy',
       onclick: function () {
         copyText(isJson && showPretty ? pretty : text).then(
-          function () { flash('Copied'); },
-          function () { flash('Copy failed'); });
+          function () { flash(copy, 'Copied'); },
+          function () { flash(copy, 'Copy failed'); });
       },
     });
-    var flashTimer = 0;
-    function flash(message) {
-      copy.textContent = message;
-      clearTimeout(flashTimer);
-      flashTimer = setTimeout(function () { copy.textContent = 'Copy'; }, 1500);
-    }
 
     var modes = null;
     if (isJson) {
@@ -1078,7 +1350,77 @@
     return h('div', null, h('div', { class: 'hlibz-tryit-body-bar' }, modes, copy), view);
   }
 
-  function renderResponse(state, response, text, elapsed, url) {
+  function formatSize(bytes) {
+    return bytes < 1024 ? bytes + ' B'
+      : bytes < 1024 * 1024 ? (bytes / 1024).toFixed(1) + ' KB'
+      : (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+  }
+
+  // Whether a body of this Content-Type reads as text. No type at all is given the benefit of the
+  // doubt: a server that forgot the header far more often sent text than an image.
+  function isTextual(type) {
+    var essence = type.split(';')[0].trim().toLowerCase();
+    return essence === ''
+      || /^text\//.test(essence)
+      || /[/+](json|xml|yaml|x-yaml)$/.test(essence)
+      || /^application\/(javascript|ecmascript|x-www-form-urlencoded|graphql|x-ndjson|jsonl?)$/
+        .test(essence);
+  }
+
+  function decode(bytes, type) {
+    var charset = /;\s*charset\s*=\s*"?([^";]+)/i.exec(type);
+    try {
+      return new TextDecoder(charset ? charset[1].trim() : 'utf-8').decode(bytes);
+    } catch (e) {
+      return new TextDecoder('utf-8').decode(bytes); // a charset label TextDecoder doesn't know
+    }
+  }
+
+  // A binary body as a file to save, under the name the server suggested if it gave one.
+  function binaryBody(bytes, type, disposition) {
+    var named = /filename\*?\s*=\s*(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition || '');
+    var name = 'response';
+    if (named) {
+      try { name = decodeURIComponent(named[1]); } catch (e) { name = named[1]; }
+    }
+    var download = h('button', {
+      type: 'button',
+      class: 'hlibz-tryit-ghost hlibz-tryit-push',
+      text: 'Download',
+      onclick: function () {
+        var href = URL.createObjectURL(new Blob([bytes], { type: type }));
+        var link = h('a', { href: href, download: name, class: 'hlibz-tryit-offscreen' });
+        // Inside the dialog, as copyText's textarea is: the modal makes the rest of the page inert.
+        (dialog || document.body).appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(function () { URL.revokeObjectURL(href); }, 10000);
+      },
+    });
+    return h('div', { class: 'hlibz-tryit-body-bar' },
+      h('span', { class: 'hlibz-tryit-hint', text: 'Binary body, ' + (type || 'no Content-Type') + '.' }),
+      download);
+  }
+
+  // What the operation says this status means: the exact code, then its range (4XX), then
+  // default. Null when it says nothing, which is itself worth showing.
+  function documentedResponse(op, status) {
+    var responses = op.responses || {};
+    var code = String(status);
+    var range = code.charAt(0) + 'XX';
+    var keys = Object.keys(responses);
+    var match = keys.filter(function (k) { return k === code; })[0]
+      || keys.filter(function (k) { return k.toUpperCase() === range; })[0]
+      || keys.filter(function (k) { return k === 'default'; })[0];
+    if (!match) {
+      return null;
+    }
+    var response = deref(responses[match]) || {};
+    return { key: match, description: String(response.description || '').split('\n')[0].trim() };
+  }
+
+  function renderResponse(state, response, bytes, elapsed, url) {
+    state.responseDone = true;
     var type = response.headers.get('content-type') || '';
     var json = /[/+]json\b/i.test(type);
 
@@ -1087,19 +1429,44 @@
       headers.push(name + ': ' + value);
     });
 
+    var body;
+    if (!bytes.byteLength) {
+      body = h('p', { class: 'hlibz-tryit-hint', text: 'No body.' });
+    } else if (isTextual(type)) {
+      body = responseBody(decode(bytes, type), json);
+    } else {
+      body = binaryBody(bytes, type, response.headers.get('content-disposition'));
+    }
+
+    // Spec text goes in as text, never as the Markdown ReDoc would render it.
+    var documented = documentedResponse(state.entry.op, response.status);
+    // "Unauthorized" under a 401 Unauthorized says nothing twice.
+    var says = documented && documented.description
+      && documented.description.toLowerCase() !== (response.statusText || '').toLowerCase();
+    var meaning = documented
+      ? (says
+        ? h('p', { class: 'hlibz-tryit-hint hlibz-tryit-meaning',
+          text: (documented.key === String(response.status) ? '' : documented.key + ': ')
+            + documented.description })
+        : null)
+      : h('p', { class: 'hlibz-tryit-undocumented',
+        text: 'Not a status this operation documents.' });
+
     var tone = response.status >= 500 ? 'error' : response.status >= 400 ? 'warning' : 'success';
-    state.response.replaceChildren(
+    // replaceChildren, unlike h(), would write a null child out as the text "null".
+    state.response.replaceChildren.apply(state.response, [
       h('div', { class: 'hlibz-tryit-status' },
         h('span', { class: 'hlibz-tryit-badge hlibz-tryit-' + tone, text: String(response.status) }),
         h('span', { text: response.statusText || '' }),
-        h('span', { class: 'hlibz-tryit-hint', text: Math.round(elapsed) + ' ms' })),
+        h('span', { class: 'hlibz-tryit-hint', text: Math.round(elapsed) + ' ms' }),
+        h('span', { class: 'hlibz-tryit-hint', text: formatSize(bytes.byteLength) })),
+      meaning,
       h('p', { class: 'hlibz-tryit-hint hlibz-tryit-url', text: url.href }),
       h('details', { class: 'hlibz-tryit-headers' },
         h('summary', { text: 'Headers (' + headers.length + ')' }),
         h('pre', { class: 'hlibz-tryit-code', text: headers.join('\n') })),
-      text
-        ? responseBody(text, json)
-        : h('p', { class: 'hlibz-tryit-hint', text: 'No body.' }));
+      body,
+    ].filter(Boolean));
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -1115,7 +1482,8 @@
       }
       var target = parseSectionId(section.getAttribute('data-section-id'));
       var entry = target && operationFor(target.path, target.method);
-      if (!entry || entry.op['x-hideTryItPanel'] === true) {
+      if (!entry || entry.op['x-hideTryItPanel'] === true
+          || (config.safeOnly && SAFE_METHODS.indexOf(entry.method) < 0)) {
         continue;
       }
       actions.insertBefore(makeOpener(entry), actions.firstChild);

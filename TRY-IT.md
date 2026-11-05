@@ -144,7 +144,8 @@ covers the whole page, keyed by scheme name.
   decrypt it unprompted, so the key would sit beside it. Nothing is logged. Password-type inputs,
   each with a show/hide eye.
 - **Rendering**: response bodies and headers go in via `textContent` only. Spec descriptions are
-  not rendered in the drawer at all. A response is attacker-influenced data on our origin.
+  never rendered as Markdown in the drawer: the one shown, a response's, is its first line as plain
+  text. A response is attacker-influenced data on our origin.
 - **Cookies ride along**: a same-origin `fetch` sends the viewer's cookies. A viewer signed in to
   a gated docs page who presses Send on `DELETE` makes a real, authenticated call. That's what they
   asked for, but non-GET Send deserves a visibly different button. Expose `credentials: 'omit'` as
@@ -165,14 +166,20 @@ covers the whole page, keyed by scheme name.
 - honouring `x-hideTryItPanel`
 
 **Later, each a registry entry or a small option**:
-- `application/x-www-form-urlencoded`
 - `multipart/form-data` (file inputs)
 - OAuth2 client-credentials, then authorization-code with PKCE (needs a redirect page we serve)
-- "copy as cURL"
 - apiKey in a cookie (not settable from `fetch`; would need `document.cookie` and same-site
   caveats)
-- binary responses as a download
 - possibly a public `window`-level registration API, once the internal one has settled
+
+**Since added**, after the MVP: copy as cURL; binary responses offered as a download, with every
+response's size; the documented meaning of the returned status, and a flag when the operation
+doesn't document it; Cancel; enum and boolean parameters as selects; and per-operation drafts, kept
+in memory when the drawer closes, with a Reset to example for the body. Then
+`application/x-www-form-urlencoded` (a registry entry: one `name=value` per line), a picker for a
+media type's named `examples` (parameters take their first), and `SafeMethodsOnly`, which mounts
+the button only on GET, HEAD, OPTIONS, TRACE and QUERY — a convenience for docs in front of a real
+system, not access control.
 
 **Not doing**: the 2.x adapters, YAML specs, `servers` variables beyond plain substitution.
 

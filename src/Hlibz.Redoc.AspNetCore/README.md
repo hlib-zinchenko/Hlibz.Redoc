@@ -486,7 +486,16 @@ app.MapReDocDocuments(documents, docs => docs.EnableTryIt());
 
 Every operation gets a **Try it** button beside ReDoc's Copy button. It opens a panel where you set
 the server, parameters, credentials and a JSON body pre-filled from the schema, send the request,
-and read the status, headers and body that come back.
+and read the status, headers and body that come back. Enum and boolean parameters are drop-downs.
+What you typed, and the last response, are still there when you reopen the same operation, until
+the page reloads; **Reset to example** puts the generated body back.
+
+- **The response**: status, time and size, and what the operation documents that status as —
+  or a note that it doesn't document it at all. JSON bodies fold and switch between pretty and raw;
+  a binary body (an image, a PDF) is offered as a **Download** instead of being shown as text.
+  **Cancel** stops a request that is taking too long.
+- **Copy as cURL**: the same request as a `curl` command line, with the credentials typed into the
+  panel. The browser's cookies aren't included, so an API using cookie auth needs them added.
 
 - **Auth**: bearer tokens, HTTP Basic, and API keys in a header or the query string. OAuth 2.0 and
   OpenID Connect schemes take a pasted access token; there is no login flow yet. A token is entered
@@ -524,13 +533,23 @@ and read the status, headers and body that come back.
   never for a production token someone might type on a shared machine. Encrypting the stored
   value wouldn't change that: the page has to decrypt it without asking, so the key sits beside it.
 - **Bodies**: JSON, with an example built from the schema's `example`, `default` or `enum` values
-  where it has them. Any other media type is sent as typed, with its declared `Content-Type`.
+  where it has them, and `application/x-www-form-urlencoded`, edited as one `name=value` per line.
+  When a media type declares several named `examples`, a picker switches between them. Any other
+  media type is sent as typed, with its declared `Content-Type`.
 - **Where requests go**: the spec's `servers`, or, if it declares none, the root of the app the
   pages are served from, `PathBase` included. Requests carry the viewer's cookies for this origin
   unless `SendCookies = false`, so an API using cookie auth works for a viewer who is already
   signed in.
 - **Opting an operation out**: `x-hideTryItPanel: true` on the operation, the same extension
   Redocly's console honours.
+- **Only reads**: for docs in front of a real system, `SafeMethodsOnly` keeps the button to `GET`,
+  `HEAD`, `OPTIONS`, `TRACE` and `QUERY`, so nobody presses Send on a `DELETE` with their own
+  cookies attached. It is a convenience, **not** access control: the API still accepts whatever
+  anyone sends it from any other client.
+
+  ```csharp
+  docs.EnableTryIt(tryIt => tryIt.SafeMethodsOnly = true);
+  ```
 
 Requests come from the viewer's browser. That has two consequences:
 
@@ -735,7 +754,7 @@ Two things worth knowing:
 | `RememberLastDocument` | `/{RoutePrefix}` returns you to the document you were last reading. Defaults to `false`; sets a cookie when on. |
 | `ContentSecurityPolicy` | Sent with each page. Unset, none is sent. A policy your own middleware set is left alone. |
 | `UseDefaultContentSecurityPolicy()` | Sets the verified policy above. |
-| `EnableTryIt(configure)` | Adds a "Try it" console to every operation. `configure` sets `CredentialStorage` (`Memory`, `Session` or `Local`; where typed credentials are kept, default `Memory`; storing them turns on the default CSP unless one is set), `CredentialLifetime` (how long stored credentials last after the last change; default 8 hours, `null` for no expiry) and `SendCookies` (default `true`). |
+| `EnableTryIt(configure)` | Adds a "Try it" console to every operation. `configure` sets `CredentialStorage` (`Memory`, `Session` or `Local`; where typed credentials are kept, default `Memory`; storing them turns on the default CSP unless one is set), `CredentialLifetime` (how long stored credentials last after the last change; default 8 hours, `null` for no expiry), `SendCookies` (default `true`) and `SafeMethodsOnly` (buttons on safe methods only; default `false`). |
 | `PrintStyles` | Print the page light, without the toolbar. Defaults to `true`. |
 | `HideDownloadButton` | Hide ReDoc's "Download OpenAPI description" button. |
 | `RequiredPropsFirst` | List required properties before optional ones in schemas. |
@@ -771,8 +790,8 @@ Two things worth knowing:
 ## What this doesn't do
 
 - It doesn't generate OpenAPI documents — `AddOpenApi()`, Swashbuckle or NSwag still does that.
-- The [try-it console](#try-it) has no OAuth login flow, form or multipart bodies, or file uploads
-  yet; those are the next additions.
+- The [try-it console](#try-it) has no OAuth login flow, multipart bodies, or file uploads yet;
+  those are the next additions.
 - No dark *theme* of its own beyond the palettes: ReDoc 3's own dark mode is the thing being
   configured here.
 - Hiding or gating a documentation page is not API security. The endpoints a document describes need

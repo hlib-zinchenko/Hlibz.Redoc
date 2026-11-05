@@ -1,5 +1,7 @@
 // This is a plain class library rather than a web SDK project, so the minimal-API extension
 // methods the samples get implicitly have to be imported by hand.
+using System.Text.Json;
+
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -78,6 +80,16 @@ public static class SampleApi
         })
             .Produces<InternalErrorResponse>(StatusCodes.Status500InternalServerError)
             .RequireSampleToken()
+            .AddOpenApiOperationTransformer((operation, _, _) =>
+            {
+                if (operation.RequestBody?.Content?.TryGetValue(
+                    "application/json", out OpenApiMediaType? json) == true)
+                {
+                    json.Examples = NewWidgetExamples();
+                }
+
+                return Task.CompletedTask;
+            })
             .WithGroupName("widgets");
 
         app.MapPut("/widgets/{id:guid}", Results<Ok<Widget>, NotFound<ErrorResponse>> (Guid id, Widget widget) =>
@@ -124,6 +136,42 @@ public static class SampleApi
             .WithGroupName("internal");
 
         return app;
+    }
+
+    /// <summary>
+    /// Named request examples for <c>POST /widgets</c>, so ReDoc's request panel and the try-it
+    /// console's example picker have more than one to switch between. Two are accepted and one is
+    /// the 400 the endpoint answers for a price of zero, so both outcomes are a click away.
+    /// Serialized with the web defaults, as the endpoint itself reads them.
+    /// </summary>
+    private static Dictionary<string, IOpenApiExample> NewWidgetExamples()
+    {
+        Widget keyboard = Widget.Sample.First();
+        Widget desk = Widget.Sample.Last();
+
+        return new Dictionary<string, IOpenApiExample>
+        {
+            ["keyboard"] = new OpenApiExample
+            {
+                Summary = "A complete widget",
+                Description = "Every field filled in, including where it ships from.",
+                Value = JsonSerializer.SerializeToNode(keyboard, JsonSerializerOptions.Web),
+            },
+            ["unassigned"] = new OpenApiExample
+            {
+                Summary = "Not in a warehouse yet",
+                Description = "A draft with no warehouse assigned: `warehouse` is null.",
+                Value = JsonSerializer.SerializeToNode(desk, JsonSerializerOptions.Web),
+            },
+            ["freePrice"] = new OpenApiExample
+            {
+                Summary = "Rejected: a price of zero",
+                Description = "Fails validation, so the endpoint answers 400.",
+                Value = JsonSerializer.SerializeToNode(
+                    keyboard with { Name = "Free Keyboard", Price = 0m },
+                    JsonSerializerOptions.Web),
+            },
+        };
     }
 
     /// <summary>The security scheme the widget catalog's write operations declare.</summary>
