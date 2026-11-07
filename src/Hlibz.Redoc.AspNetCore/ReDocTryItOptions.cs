@@ -7,9 +7,10 @@ namespace Hlibz.Redoc.Extensions;
 /// <remarks>
 /// <para>
 /// The console adds a "Try it" button to every operation. It opens a panel where a viewer fills
-/// in parameters, a JSON body and credentials, sends the request from their browser, and reads the
+/// in parameters, a body and credentials, sends the request from their browser, and reads the
 /// response. Bearer tokens, HTTP Basic and API keys (header or query) are supported. OAuth 2.0 and
-/// OpenID Connect schemes accept a pasted access token. Other media types are sent as typed.
+/// OpenID Connect schemes accept a pasted access token. JSON, form, multipart and whole-file
+/// bodies are supported; other media types are sent as typed.
 /// </para>
 /// <para>
 /// Requests go from the viewer's browser, so a server on another origin must allow it through

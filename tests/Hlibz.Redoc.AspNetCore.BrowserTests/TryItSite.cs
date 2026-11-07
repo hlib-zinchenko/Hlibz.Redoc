@@ -54,12 +54,6 @@ public sealed class TryItSite : IAsyncLifetime
         app.MapGet("/widgets/landing", () => TypedResults.Text("Sign in first."))
             .ExcludeFromDescription();
 
-        // Nor this: an operation with an operationId, which ReDoc anchors by that id rather than
-        // by its path, so the script has to find it a second way.
-        app.MapGet("/widgets/{id:guid}/stock", (Guid id) => TypedResults.Ok(new { id, inStock = 3 }))
-            .WithName("GetWidgetStock")
-            .WithGroupName("widgets");
-
         app.MapReDocDocuments(
             [new ReDocDocument("widgets", "Widget Catalog")],
             options =>
