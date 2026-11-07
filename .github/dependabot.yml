@@ -1,0 +1,30 @@
+# Weekly, grouped: one PR for all NuGet updates, one for all GitHub Actions.
+# CI runs the tests on every PR, so a green check is what makes these safe to merge.
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      nuget:
+        patterns: ["*"]
+    # These are the minimum versions consumers need; a major bump is a breaking change
+    # for them, so it is a manual decision.
+    ignore:
+      - dependency-name: "Redoc.AspNetCore"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Swashbuckle.AspNetCore.*"
+        update-types: ["version-update:semver-major"]
+  # Actions run the NuGet release, so they get updated too.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ["*"]
