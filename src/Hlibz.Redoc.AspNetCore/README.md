@@ -490,16 +490,28 @@ and read the status, headers and body that come back. Enum and boolean parameter
 What you typed, and the last response, are still there when you reopen the same operation, until
 the page reloads; **Reset to example** puts the generated body back.
 
+- **Parameters**: an array is typed comma-separated and an object as JSON. They go out in the
+  parameter's declared `style`, whatever the box looks like: `form`, `spaceDelimited`,
+  `pipeDelimited` and `deepObject` (`filter[color]=red`) in the query, `simple`, `label` and
+  `matrix` in the path. When an operation can answer in more than one media type, an **Accept**
+  drop-down picks which. A value the schema rules out — too long, out of range, not one of an
+  `enum`, not matching a `pattern`, not a UUID — gets a warning under its field as you type, but
+  is still sent: trying a bad value is half of what a console is for.
+- **Extra headers**: **Add header** sends any header the spec doesn't list — `If-None-Match`, a
+  correlation id, a tenant or version header. They go last, so one can override a header the panel
+  set itself. A browser won't send a few, such as `Cookie` and `Host`, whatever the panel says.
+- **Deprecated operations** say so at the top of their panel, and deprecated parameters next to
+  their name. They still send.
 - **The response**: status, time and size, and what the operation documents that status as —
   or a note that it doesn't document it at all. A request that was redirected says where to, since
   the status shown is then the other URL's — a sign-in page's `200`, say — and isn't matched
   against the operation's responses. JSON bodies fold and switch between pretty and raw;
   a binary body (an image, a PDF) is offered as a **Download** instead of being shown as text.
   **Cancel** stops a request that is taking too long.
-- **Copy as cURL**: the same request as a `curl` command line, with the credentials typed into the
-  panel. The browser's cookies aren't included, so an API using cookie auth needs them added. A
-  file in a multipart body goes in by name only (`-F 'photo=@front.png'`): run it where the file
-  is.
+- **Copy as cURL** and **Copy as fetch**: the same request as a `curl` command line or as a
+  `fetch()` call for a browser console or script, with the credentials typed into the panel. The browser's cookies aren't included, so an API using cookie auth needs them added. A
+  file goes in by name only (`-F 'photo=@front.png'`, or `--data-binary '@manual.pdf'` for a
+  whole-file body): run it where the file is.
 - **Auth**: bearer tokens, HTTP Basic, and API keys in a header or the query string. OAuth 2.0 and
   OpenID Connect schemes take a pasted access token; there is no login flow yet. A token is entered
   once per security scheme and covers every operation on the page. Cookie parameters get no field —
@@ -542,12 +554,18 @@ the page reloads; **Reset to example** puts the generated body back.
   `multipart/form-data`, whose text fields are edited the same way and whose files — any property
   the schema declares as `format: binary`, which is how ASP.NET Core describes an `IFormFile` —
   each get a file picker. When a media type declares several named `examples`, a picker switches
-  between them. Any other
-  media type is sent as typed, with its declared `Content-Type`.
+  between them. A body whose schema is a `oneOf`/`anyOf` — a polymorphic type, which ASP.NET Core
+  describes that way for `[JsonDerivedType]` — gets a **Variant** picker instead when the media
+  type gives no example of its own; each variant's starting body carries its discriminator first,
+  where System.Text.Json requires it. A binary body — a `format: binary` schema, or a media type like
+  `application/octet-stream`, `application/pdf` or `image/*` with none — gets one file picker,
+  and the file is sent as the whole body (for a wildcard type, with the file's own
+  `Content-Type`). Any other media type is sent as typed, with its declared `Content-Type`.
 - **Specs**: the console reads JSON OpenAPI documents only. A page whose spec is YAML still
   renders, but gets no **Try it** buttons.
 - **Where requests go**: the spec's `servers`, or, if it declares none, the root of the app the
-  pages are served from, `PathBase` included. Requests carry the viewer's cookies for this origin
+  pages are served from, `PathBase` included. A server's `{variables}` each get a field, a
+  drop-down when the variable has an `enum`, starting at its `default`. Requests carry the viewer's cookies for this origin
   unless `SendCookies = false`, so an API using cookie auth works for a viewer who is already
   signed in.
 - **Opting an operation out**: `x-hideTryItPanel: true` on the operation, the same extension

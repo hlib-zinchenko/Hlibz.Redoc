@@ -329,11 +329,80 @@
     });
   }
 
+  // A body whose schema is a oneOf/anyOf — a polymorphic type, as ASP.NET Core describes one with
+  // [JsonDerivedType] — offers each branch as a starting point, when the media type gives no
+  // example of its own to start from. Labelled by the discriminator's name for the branch when
+  // there is one (and its sample then carries that name in the discriminator property, which the
+  // branch's own schema often leaves out), else by the branch's title or schema name.
+  function variantsOf(media) {
+    if (!media || media.example !== undefined || namedExamples(media).length) {
+      return [];
+    }
+    var schema = deref(media.schema) || {};
+    var choice = schema.oneOf || schema.anyOf;
+    if (!Array.isArray(choice)) {
+      return [];
+    }
+    var disc = schema.discriminator && typeof schema.discriminator === 'object'
+      ? schema.discriminator : {};
+    var mapping = disc.mapping || {};
+    var list = choice.map(function (branch, i) {
+      var target = deref(branch) || {};
+      if (target.type === 'null') {
+        return null;
+      }
+      var ref = branch && typeof branch.$ref === 'string' ? branch.$ref : null;
+      var schemaName = ref ? unescapePointer(ref.split('/').pop()) : null;
+      var tag = ref ? Object.keys(mapping).filter(function (k) { return mapping[k] === ref; })[0]
+        : undefined;
+      if (!tag && schemaName && disc.propertyName) {
+        tag = schemaName;
+      }
+      return {
+        key: 'variant:' + i,
+        label: tag || target.title || schemaName || 'Option ' + (i + 1),
+        branch: branch,
+        tag: disc.propertyName ? tag : undefined,
+        property: disc.propertyName,
+      };
+    }).filter(Boolean);
+    return list.length > 1 ? list : [];
+  }
+
+  function variantSample(variant) {
+    var value = sampleOf(variant.branch);
+    if (variant.tag !== undefined && value && typeof value === 'object' && !Array.isArray(value)) {
+      // The discriminator first, as a reader expects it, and with the mapped name rather than
+      // whatever the branch's schema sampled for it.
+      var tagged = {};
+      tagged[variant.property] = variant.tag;
+      Object.keys(value).forEach(function (k) {
+        if (k !== variant.property) {
+          tagged[k] = value[k];
+        }
+      });
+      value = tagged;
+    }
+    return value;
+  }
+
+  // What the Example select offers for a media type: its named examples, else its variants.
+  function exampleChoices(media) {
+    var named = namedExamples(media);
+    return named.length ? named : variantsOf(media);
+  }
+
   // The example a media type entry declares — the named one asked for, else its example, else its
-  // first named one — before falling back to its schema.
+  // first named one — before falling back to its schema (through its first variant, if it has
+  // variants, so even that one carries its discriminator).
   function mediaExample(media, name) {
     if (!media) {
       return undefined;
+    }
+    var variants = variantsOf(media);
+    var variant = variants.filter(function (v) { return v.key === name; })[0] || variants[0];
+    if (variant) {
+      return variantSample(variant);
     }
     var named = namedExamples(media);
     var chosen = named.filter(function (n) { return n.key === name; })[0];
@@ -673,6 +742,28 @@
     },
   });
 
+  // A whole-file body: application/octet-stream, image/png, application/pdf and the like. Chosen
+  // by the schema when there is one (a binary string, as for a multipart file part), and by the
+  // media type when there isn't, since a binary type with no schema can't be typed into a box.
+  // The File itself is the fetch body; its Content-Type is the declared one, or, for a wildcard
+  // like image/*, the file's own.
+  registerBody({
+    whole: true,
+    matches: function (type, media) {
+      var schema = media && media.schema ? deref(media.schema) : null;
+      return schema ? isFileSchema(schema) : !isTextual(type);
+    },
+    hint: 'The chosen file is sent as the whole body.',
+    files: function () {
+      return [{ name: '', label: 'File', multiple: false, required: false }];
+    },
+    initial: function () { return ''; },
+    encode: function (text, files) {
+      var input = files && files[0] && files[0].input;
+      return input && input.files.length ? input.files[0] : undefined;
+    },
+  });
+
   // Anything else is sent as typed, with its declared Content-Type. Not a promise of support,
   // just not a refusal either.
   var rawBody = {
@@ -682,9 +773,9 @@
     encode: function (text) { return text === '' ? undefined : text; },
   };
 
-  function bodyHandlerFor(type) {
+  function bodyHandlerFor(type, media) {
     for (var i = 0; i < bodyHandlers.length; i++) {
-      if (bodyHandlers[i].matches(type)) {
+      if (bodyHandlers[i].matches(type, media)) {
         return bodyHandlers[i];
       }
     }
@@ -703,23 +794,82 @@
       if (!server || typeof server.url !== 'string') {
         return;
       }
-      var url = server.url.replace(/\{([^}]+)\}/g, function (match, name) {
-        var variable = server.variables && server.variables[name];
-        return variable && variable.default !== undefined ? variable.default : match;
+      var names = [];
+      server.url.replace(/\{([^}]+)\}/g, function (match, name) {
+        if (names.indexOf(name) < 0) {
+          names.push(name);
+        }
+        return match;
       });
+      var candidate = {
+        template: server.url,
+        description: server.description,
+        names: names,
+        variables: server.variables && typeof server.variables === 'object' ? server.variables : {},
+      };
+      // A server with no variables has to be a URL as it stands. One with variables may need a
+      // value typed before it is one, so it is kept and checked on Send.
       try {
-        list.push({ url: new URL(url, config.appBase).href, label: server.description || url });
-      } catch (e) { /* not a URL we can send to */ }
+        resolveServer(candidate, {});
+      } catch (e) {
+        if (!names.length) {
+          return;
+        }
+      }
+      list.push(candidate);
     });
 
     // No servers means "/" in OpenAPI, which on a PathBase or behind a proxy is not where the API
     // is. The page knows where the app base is, so that is the default instead.
     if (!list.length) {
-      list.push({ url: config.appBase, label: 'This app' });
+      list.push({ template: config.appBase, description: 'This app', names: [], variables: {} });
     }
 
-    var sameOrigin = list.filter(function (s) { return new URL(s.url).origin === location.origin; });
-    return { list: list, selected: (sameOrigin[0] || list[0]).url };
+    var selected = 0;
+    list.some(function (s, i) {
+      try {
+        if (new URL(resolveServer(s, {})).origin === location.origin) {
+          selected = i;
+          return true;
+        }
+      } catch (e) { /* needs a variable typed first */ }
+      return false;
+    });
+    return { list: list, selected: selected };
+  }
+
+  // The server's URL with its variables filled in: what was typed, else the variable's default.
+  // Values go in as typed, since a variable may stand for a host or several path segments.
+  function resolveServer(server, values) {
+    var url = server.template.replace(/\{([^}]+)\}/g, function (match, name) {
+      var typed = values[name];
+      if (typed !== undefined && typed !== '') {
+        return typed;
+      }
+      var variable = deref(server.variables[name]);
+      if (variable && variable.default !== undefined && variable.default !== null) {
+        return String(variable.default);
+      }
+      throw new Error('The server variable ' + name + ' needs a value.');
+    });
+    try {
+      return new URL(url, config.appBase).href;
+    } catch (e) {
+      throw new Error(url + ' is not a server URL this console can send to.');
+    }
+  }
+
+  // What the server select shows: a plain server's absolute URL, a templated one's template.
+  function serverLabel(server) {
+    var shown = server.template;
+    if (!server.names.length) {
+      try {
+        shown = resolveServer(server, {});
+      } catch (e) { /* listed only if it resolves */ }
+    }
+    return server.description && server.description !== shown
+      ? server.description + ' — ' + shown
+      : shown;
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -746,7 +896,15 @@
   // The response is kept only once it is finished — shown, failed or cancelled — never a
   // "Sending…" that the close aborted.
   function saveDraft(state) {
-    var draft = { server: state.server.value, params: {}, body: null, response: null };
+    var draft = {
+      server: state.server.template(),
+      serverValues: state.server.values(),
+      accept: state.accept ? state.accept.value : undefined,
+      headers: state.extraHeaders(),
+      params: {},
+      body: null,
+      response: null,
+    };
     state.params.forEach(function (item) {
       draft.params[paramKey(item.param)] = item.input.value;
     });
@@ -890,6 +1048,161 @@
     return values.length ? values : null;
   }
 
+  // ---------------------------------------------------------------------------------------------
+  // Light checks on what was typed into a parameter, against its schema: type, enum, length,
+  // pattern, range, item count and a few formats. Each problem is one sentence; none stops a send.
+
+  var FORMAT_CHECKS = {
+    uuid: [/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, 'a UUID'],
+    date: [/^\d{4}-\d{2}-\d{2}$/, 'a date like 2024-01-31'],
+    'date-time': [/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/i,
+      'a date-time like 2024-01-31T12:00:00Z'],
+    email: [/^[^\s@]+@[^\s@]+$/, 'an email address'],
+  };
+
+  function valueWarnings(schema, text, what) {
+    schema = deref(schema) || {};
+    var found = [];
+    var type = [].concat(schema.type || []).filter(function (t) { return t !== 'null'; })[0];
+    if (type === 'integer' || type === 'number') {
+      var n = Number(text);
+      if (text.trim() === '' || isNaN(n)) {
+        return [what + ' should be a number.'];
+      }
+      if (type === 'integer' && Math.floor(n) !== n) {
+        found.push(what + ' should be a whole number.');
+      }
+      if (typeof schema.minimum === 'number'
+          && (schema.exclusiveMinimum === true ? n <= schema.minimum : n < schema.minimum)) {
+        found.push(what + ' should be ' + (schema.exclusiveMinimum === true ? 'more than ' : 'at least ')
+          + schema.minimum + '.');
+      }
+      if (typeof schema.exclusiveMinimum === 'number' && n <= schema.exclusiveMinimum) {
+        found.push(what + ' should be more than ' + schema.exclusiveMinimum + '.');
+      }
+      if (typeof schema.maximum === 'number'
+          && (schema.exclusiveMaximum === true ? n >= schema.maximum : n > schema.maximum)) {
+        found.push(what + ' should be ' + (schema.exclusiveMaximum === true ? 'less than ' : 'at most ')
+          + schema.maximum + '.');
+      }
+      if (typeof schema.exclusiveMaximum === 'number' && n >= schema.exclusiveMaximum) {
+        found.push(what + ' should be less than ' + schema.exclusiveMaximum + '.');
+      }
+    } else if (type === 'boolean') {
+      if (text !== 'true' && text !== 'false') {
+        found.push(what + ' should be true or false.');
+      }
+    }
+    if (Array.isArray(schema.enum) && schema.enum.length
+        && schema.enum.map(String).indexOf(text) < 0) {
+      found.push(what + ' should be one of ' + schema.enum.map(String).join(', ') + '.');
+    }
+    if (typeof schema.minLength === 'number' && text.length < schema.minLength) {
+      found.push(what + ' should be at least ' + schema.minLength + ' characters.');
+    }
+    if (typeof schema.maxLength === 'number' && text.length > schema.maxLength) {
+      found.push(what + ' should be at most ' + schema.maxLength + ' characters.');
+    }
+    if (typeof schema.pattern === 'string') {
+      try {
+        if (!new RegExp(schema.pattern).test(text)) {
+          found.push(what + ' should match ' + schema.pattern + '.');
+        }
+      } catch (e) { /* a pattern JavaScript can't read is not the viewer's problem */ }
+    }
+    var format = FORMAT_CHECKS[schema.format];
+    if (format && !format[0].test(text)) {
+      found.push(what + ' should be ' + format[1] + '.');
+    }
+    return found;
+  }
+
+  function paramWarnings(p, text) {
+    if (!p.schema) {
+      return [];
+    }
+    var schema = deref(p.schema) || {};
+    var kind = kindOf(schema);
+    if (kind === 'object') {
+      return []; // paramValue says so on Send if it isn't JSON; deeper checks are the server's.
+    }
+    if (kind === 'array') {
+      var items = text.split(',').map(function (v) { return v.trim(); });
+      var found = [];
+      if (typeof schema.minItems === 'number' && items.length < schema.minItems) {
+        found.push('Give at least ' + schema.minItems + ' values.');
+      }
+      if (typeof schema.maxItems === 'number' && items.length > schema.maxItems) {
+        found.push('Give at most ' + schema.maxItems + ' values.');
+      }
+      items.forEach(function (item) {
+        valueWarnings(schema.items, item, '"' + item + '"').forEach(function (w) {
+          if (found.indexOf(w) < 0) {
+            found.push(w);
+          }
+        });
+      });
+      return found;
+    }
+    return valueWarnings(schema, text, 'The value');
+  }
+
+  // The type, how to type it, and the style it goes out in when that isn't the location's default,
+  // since "red,blue" in the box becoming red|blue on the wire would otherwise be a surprise.
+  var STYLE_NAMES = {
+    label: 'as .a.b (label)',
+    matrix: 'as ;name=value (matrix)',
+    spaceDelimited: 'space-delimited',
+    pipeDelimited: 'pipe-delimited',
+    deepObject: 'as name[key]=value',
+  };
+
+  // The media types a successful response is documented in (the 2XX ones, else default), in the
+  // order the spec gives them. Offered as Accept only when there is a real choice: with one, the
+  // server has nothing to negotiate, and narrowing Accept could only earn a 406 on an error.
+  function acceptTypesOf(op) {
+    var responses = op.responses || {};
+    var keys = Object.keys(responses).filter(function (k) { return /^2/.test(k); });
+    if (!keys.length && responses['default']) {
+      keys = ['default'];
+    }
+    var types = [];
+    keys.forEach(function (k) {
+      Object.keys((deref(responses[k]) || {}).content || {}).forEach(function (t) {
+        if (types.indexOf(t) < 0 && t.indexOf('*') < 0) {
+          types.push(t);
+        }
+      });
+    });
+    return types;
+  }
+
+  function paramHint(p) {
+    if (!p.schema && p.content) {
+      return Object.keys(p.content)[0] + ' — sent as typed';
+    }
+    var schema = deref(p.schema) || {};
+    var kind = kindOf(schema);
+    var type = [].concat(schema.type || []).filter(function (t) { return t !== 'null'; })[0];
+    var parts = [[type || (kind === 'primitive' ? null : kind), schema.format]
+      .filter(Boolean).join(', ')];
+    if (kind === 'array') {
+      parts.push('comma-separated');
+    } else if (kind === 'object') {
+      parts.push('JSON');
+    }
+    var s = styleOf(p);
+    if ((STYLE_NAMES[s.style] && kind !== 'primitive')
+        || s.style === 'label' || s.style === 'matrix') {
+      parts.push('sent ' + STYLE_NAMES[s.style]);
+    } else if (p.in === 'query' && kind === 'object') {
+      parts.push(s.explode ? 'each key sent as its own parameter' : 'sent as one value');
+    } else if (p.in === 'query' && kind === 'array' && !s.explode) {
+      parts.push('sent as one value');
+    }
+    return parts.filter(Boolean).join(' — ');
+  }
+
   function open(entry, opener) {
     ensureDialog();
     loadCredentials();
@@ -910,13 +1223,67 @@
 
     // Server
     var serverSelect = h('select', { class: 'hlibz-tryit-input' },
-      servers.list.map(function (s) {
-        return h('option', { value: s.url, selected: s.url === servers.selected, text: s.label === s.url ? s.url : s.label + ' — ' + s.url });
+      servers.list.map(function (s, i) {
+        return h('option', { value: String(i), selected: i === servers.selected, text: serverLabel(s) });
       }));
-    if (draft && servers.list.some(function (s) { return s.url === draft.server; })) {
-      serverSelect.value = draft.server;
+    if (draft) {
+      servers.list.some(function (s, i) {
+        if (s.template === draft.server) {
+          serverSelect.value = String(i);
+          return true;
+        }
+        return false;
+      });
     }
-    state.server = serverSelect;
+    // A field per variable of the selected server; what was typed is kept per server template,
+    // so switching servers and back doesn't lose it.
+    var serverValues = (draft && draft.serverValues) || {};
+    var varsBox = h('div', { class: 'hlibz-tryit-server-vars' });
+    var varInputs = {};
+    var shown = null;
+    var keepVars = function () {
+      if (shown) {
+        var kept = serverValues[shown.template] = {};
+        Object.keys(varInputs).forEach(function (name) { kept[name] = varInputs[name].value; });
+      }
+    };
+    var renderVars = function () {
+      keepVars();
+      shown = servers.list[Number(serverSelect.value)];
+      var kept = serverValues[shown.template] || {};
+      varInputs = {};
+      varsBox.replaceChildren.apply(varsBox, shown.names.map(function (name) {
+        var variable = deref(shown.variables[name]) || {};
+        var choices = Array.isArray(variable.enum) && variable.enum.length
+          ? variable.enum.map(String) : null;
+        var input = choices
+          ? h('select', { class: 'hlibz-tryit-input' },
+            choices.map(function (c) { return h('option', { value: c, text: c }); }))
+          : h('input', { class: 'hlibz-tryit-input', type: 'text', spellcheck: 'false' });
+        input.value = kept[name] !== undefined ? kept[name]
+          : variable.default !== undefined && variable.default !== null ? String(variable.default)
+          : '';
+        varInputs[name] = input;
+        return field(h('span', null, h('code', { text: '{' + name + '}' })), input,
+          variable.description ? String(variable.description).split('\n')[0].trim() : null);
+      }));
+      varsBox.hidden = !shown.names.length;
+    };
+    serverSelect.addEventListener('change', renderVars);
+    renderVars();
+    state.server = {
+      select: serverSelect,
+      template: function () { return shown.template; },
+      values: function () {
+        keepVars();
+        return serverValues;
+      },
+      url: function () {
+        var typed = {};
+        Object.keys(varInputs).forEach(function (name) { typed[name] = varInputs[name].value; });
+        return resolveServer(shown, typed);
+      },
+    };
 
     // Auth
     var authSection = null;
@@ -999,13 +1366,74 @@
             : paramDefault(p);
           state.params.push({ param: p, input: input });
           var label = h('span', null, h('code', { text: p.name }),
-            required ? h('span', { class: 'hlibz-tryit-required', text: ' required' }) : null);
-          var schema = deref(p.schema) || {};
-          var hint = [schema.type, schema.format].filter(Boolean).join(', ')
-            + (schema.type === 'array' ? ' — comma-separated' : '');
-          return field(label, input, hint);
+            required ? h('span', { class: 'hlibz-tryit-required', text: ' required' }) : null,
+            p.deprecated ? h('span', { class: 'hlibz-tryit-deprecated-tag', text: ' deprecated' }) : null);
+          var row = field(label, input, paramHint(p));
+          // What the schema says the value should be, said as the viewer types: a warning, never a
+          // refusal, because sending a bad value on purpose is half of what a console is for.
+          var warning = h('span', { class: 'hlibz-tryit-check', 'aria-live': 'polite', hidden: true });
+          var check = function () {
+            var problems = input.value === '' ? [] : paramWarnings(p, input.value);
+            warning.textContent = problems.join(' ');
+            warning.hidden = !problems.length;
+          };
+          input.addEventListener('input', check);
+          input.addEventListener('change', check);
+          check();
+          row.appendChild(warning);
+          return row;
         }));
     });
+
+    // Headers the spec doesn't declare: a correlation id, If-Match, a tenant or version header. One
+    // row each, added on demand, and sent after everything else so one can override what the
+    // console set itself (Accept, say).
+    var headerRows = [];
+    var headerList = h('div', { class: 'hlibz-tryit-header-rows' });
+    var addHeader = function (name, value, focus) {
+      var row = {
+        name: h('input', { class: 'hlibz-tryit-input', type: 'text', spellcheck: 'false',
+          placeholder: 'Name', 'aria-label': 'Header name', value: name || '' }),
+        value: h('input', { class: 'hlibz-tryit-input', type: 'text', spellcheck: 'false',
+          placeholder: 'Value', 'aria-label': 'Header value', value: value || '' }),
+      };
+      row.node = h('div', { class: 'hlibz-tryit-header-row' }, row.name, row.value,
+        h('button', {
+          type: 'button',
+          class: 'hlibz-tryit-ghost',
+          'aria-label': 'Remove header',
+          title: 'Remove',
+          text: '×',
+          onclick: function () {
+            headerRows.splice(headerRows.indexOf(row), 1);
+            row.node.remove();
+            addButton.focus();
+          },
+        }));
+      headerRows.push(row);
+      headerList.appendChild(row.node);
+      if (focus) {
+        row.name.focus();
+      }
+    };
+    var addButton = h('button', {
+      type: 'button',
+      class: 'hlibz-tryit-ghost',
+      text: 'Add header',
+      onclick: function () { addHeader('', '', true); },
+    });
+    ((draft && draft.headers) || []).forEach(function (pair) { addHeader(pair[0], pair[1]); });
+    state.extraHeaders = function () {
+      return headerRows.map(function (row) { return [row.name.value.trim(), row.value.value]; })
+        .filter(function (pair) { return pair[0] !== ''; });
+    };
+    var headersSection = h('section', { class: 'hlibz-tryit-section' },
+      h('h3', { text: 'Extra headers' }),
+      headerList,
+      h('div', { class: 'hlibz-tryit-body-bar' },
+        h('span', { class: 'hlibz-tryit-hint',
+          text: 'Headers the spec doesn\'t list. A browser won\'t send some, like Cookie or Host.' }),
+        h('span', { class: 'hlibz-tryit-push' }, addButton)));
 
     // Cookie parameters get no field, since a page can't set a request's Cookie header. Named
     // rather than left out, so a request that fails for want of one says why.
@@ -1032,7 +1460,9 @@
       var typeSelect = h('select', { class: 'hlibz-tryit-input' },
         types.map(function (t) { return h('option', { value: t, text: t }); }));
       // Prefer a type we actually understand.
-      var preferred = types.filter(function (t) { return !bodyHandlerFor(t).raw; })[0];
+      var preferred = types.filter(function (t) {
+        return !bodyHandlerFor(t, requestBody.content[t]).raw;
+      })[0];
       if (preferred) {
         typeSelect.value = preferred;
       }
@@ -1047,7 +1477,7 @@
       var fileInputs = [];
       var keptFiles = (draft && draft.body && draft.body.files) || [];
       var renderFiles = function () {
-        var handler = bodyHandlerFor(typeSelect.value);
+        var handler = bodyHandlerFor(typeSelect.value, requestBody.content[typeSelect.value]);
         var wanted = handler.files ? handler.files(requestBody.content[typeSelect.value]) : [];
         var reusable = keptFiles.concat(fileInputs);
         fileInputs = wanted.map(function (f) {
@@ -1056,13 +1486,14 @@
           })[0];
           return {
             name: f.name,
+            label: f.label,
             required: f.required,
             input: kept ? kept.input : h('input', { type: 'file', class: 'hlibz-tryit-input', multiple: f.multiple }),
           };
         });
         filesBox.replaceChildren.apply(filesBox, fileInputs.map(function (f) {
           return field(
-            h('span', null, h('code', { text: f.name }),
+            h('span', null, f.label || h('code', { text: f.name }),
               f.required ? h('span', { class: 'hlibz-tryit-required', text: ' required' }) : null),
             f.input,
             f.input.multiple ? 'One or more files.' : null);
@@ -1072,21 +1503,37 @@
       // Offered only when the media type names more than one example; each type has its own.
       var exampleSelect = h('select', { class: 'hlibz-tryit-input' });
       var exampleField = field('Example', exampleSelect);
+      var exampleLabel = exampleField.querySelector('.hlibz-tryit-label');
       var listExamples = function () {
-        var named = namedExamples(requestBody.content[typeSelect.value]);
+        var media = requestBody.content[typeSelect.value];
+        var named = exampleChoices(media);
+        exampleLabel.textContent = namedExamples(media).length ? 'Example' : 'Variant';
         exampleSelect.replaceChildren.apply(exampleSelect, named.map(function (n) {
           return h('option', { value: n.key, text: n.label });
         }));
-        exampleField.hidden = named.length < 2;
+        // A whole-file body has no text to fill in, so no example to pick either.
+        exampleField.hidden = named.length < 2
+          || !!bodyHandlerFor(typeSelect.value, requestBody.content[typeSelect.value]).whole;
       };
       var fill = function () {
-        var handler = bodyHandlerFor(typeSelect.value);
+        var handler = bodyHandlerFor(typeSelect.value, requestBody.content[typeSelect.value]);
         editor.value = handler.initial(
           requestBody.content[typeSelect.value], exampleSelect.value || undefined);
         note.textContent = handler.raw
           ? 'Sent as typed: this media type has no editor here yet.'
           : handler.hint || '';
+        editor.hidden = !!handler.whole;
+        resetButton.hidden = !!handler.whole;
       };
+      var resetButton = h('button', {
+        type: 'button',
+        class: 'hlibz-tryit-ghost hlibz-tryit-push',
+        text: 'Reset to example',
+        onclick: function () {
+          fill();
+          editor.focus();
+        },
+      });
       typeSelect.addEventListener('change', function () {
         listExamples();
         renderFiles();
@@ -1096,7 +1543,7 @@
       listExamples();
       renderFiles();
       if (draft && draft.body && draft.body.type === typeSelect.value && draft.body.example
-          && namedExamples(requestBody.content[typeSelect.value])
+          && exampleChoices(requestBody.content[typeSelect.value])
             .some(function (n) { return n.key === draft.body.example; })) {
         exampleSelect.value = draft.body.example;
       }
@@ -1109,6 +1556,7 @@
         exampleSelect: exampleSelect,
         editor: editor,
         files: function () { return fileInputs; },
+        content: requestBody.content,
         required: !!requestBody.required,
       };
       bodySection = h('section', { class: 'hlibz-tryit-section' },
@@ -1117,18 +1565,22 @@
         exampleField,
         filesBox,
         editor,
-        h('div', { class: 'hlibz-tryit-body-bar' },
-          note,
-          h('button', {
-            type: 'button',
-            class: 'hlibz-tryit-ghost hlibz-tryit-push',
-            text: 'Reset to example',
-            onclick: function () {
-              fill();
-              editor.focus();
-            },
-          })));
+        h('div', { class: 'hlibz-tryit-body-bar' }, note, resetButton));
     }
+
+    // Accept, when the operation can answer in more than one media type.
+    var acceptTypes = acceptTypesOf(op);
+    var acceptSelect = null;
+    if (acceptTypes.length > 1) {
+      acceptSelect = h('select', { class: 'hlibz-tryit-input' },
+        acceptTypes.map(function (t) { return h('option', { value: t, text: t }); }),
+        h('option', { value: '', text: 'Any (no Accept header)' }));
+      if (draft && draft.accept !== undefined
+          && (draft.accept === '' || acceptTypes.indexOf(draft.accept) >= 0)) {
+        acceptSelect.value = draft.accept;
+      }
+    }
+    state.accept = acceptSelect;
 
     var method = entry.method.toUpperCase();
     var sendButton = h('button', {
@@ -1150,24 +1602,33 @@
         }
       },
     });
-    var curlButton = h('button', {
-      type: 'button',
-      class: 'hlibz-tryit-ghost hlibz-tryit-push',
-      text: 'Copy as cURL',
-      title: 'Includes the credentials typed here. The browser\'s cookies are not included.',
-      onclick: function () {
-        var req;
-        try {
-          req = buildRequest(state);
-        } catch (e) {
-          showError(e.message);
-          return;
-        }
-        copyText(curlOf(entry.method, req)).then(
-          function () { flash(curlButton, 'Copied'); },
-          function () { flash(curlButton, 'Copy failed'); });
-      },
-    });
+    // The same request as code to paste elsewhere: a terminal, or a browser's console.
+    var copyAs = function (label, render, title) {
+      var button = h('button', {
+        type: 'button',
+        class: 'hlibz-tryit-ghost',
+        text: label,
+        title: title,
+        onclick: function () {
+          var req;
+          try {
+            req = buildRequest(state);
+          } catch (e) {
+            showError(e.message);
+            return;
+          }
+          copyText(render(entry.method, req)).then(
+            function () { flash(button, 'Copied'); },
+            function () { flash(button, 'Copy failed'); });
+        },
+      });
+      return button;
+    };
+    var copyButtons = h('span', { class: 'hlibz-tryit-push hlibz-tryit-copy-as' },
+      copyAs('Copy as cURL', curlOf,
+        'Includes the credentials typed here. The browser\'s cookies are not included.'),
+      copyAs('Copy as fetch', fetchOf,
+        'Includes the credentials typed here. Run on this site, it sends the browser\'s cookies too.'));
     state.response = h('div', { class: 'hlibz-tryit-response', 'aria-live': 'polite' });
     if (draft && draft.response) {
       state.response.replaceChildren.apply(state.response, draft.response);
@@ -1181,16 +1642,25 @@
         h('button', { type: 'button', class: 'hlibz-tryit-close', 'aria-label': 'Close', text: '×', onclick: function () { dialog.close(); } })),
       h('div', { class: 'hlibz-tryit-body' },
         op.summary ? h('p', { class: 'hlibz-tryit-summary', text: op.summary }) : null,
-        h('section', { class: 'hlibz-tryit-section' }, field('Server', serverSelect)),
+        op.deprecated === true
+          ? h('p', { class: 'hlibz-tryit-undocumented hlibz-tryit-deprecated', role: 'note',
+            text: 'Deprecated: this operation still answers, but may be removed. '
+              + 'The docs above may say what to use instead.' })
+          : null,
+        h('section', { class: 'hlibz-tryit-section' },
+          field('Server', serverSelect),
+          varsBox,
+          acceptSelect ? field('Accept', acceptSelect) : null),
         authSection,
         paramSections,
+        headersSection,
         cookieSection,
         bodySection,
         h('div', { class: 'hlibz-tryit-actions' },
           sendButton,
           state.cancelButton,
           h('span', { class: 'hlibz-tryit-hint', text: (/Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl') + '+Enter' }),
-          curlButton),
+          copyButtons),
         state.response));
 
     if (!dialog.open) {
@@ -1210,6 +1680,154 @@
     current.responseDone = true;
   }
 
+  // ---------------------------------------------------------------------------------------------
+  // Parameter serialization, by OpenAPI's style and explode. A parameter is typed into one text box:
+  // an array comma-separated, an object as JSON. What goes on the wire is then the parameter's
+  // declared style, not the box's.
+
+  // The schema's kind: 'array', 'object' or 'primitive'. A 3.1 type list counts its first non-null
+  // member; a schema with no type is judged by what it declares.
+  function kindOf(schema) {
+    schema = deref(schema) || {};
+    var type = [].concat(schema.type || []).filter(function (t) { return t !== 'null'; })[0];
+    if (type === 'array' || (!type && schema.items)) {
+      return 'array';
+    }
+    if (type === 'object' || (!type && (schema.properties || schema.additionalProperties))) {
+      return 'object';
+    }
+    return 'primitive';
+  }
+
+  // The style a parameter is sent in, with explode resolved to the default for that style: true
+  // for form (and deepObject, which has no other form), false for everything else.
+  function styleOf(p) {
+    var style = p.style
+      || (p.in === 'query' || p.in === 'cookie' ? 'form' : 'simple');
+    var explode = typeof p.explode === 'boolean' ? p.explode
+      : style === 'form' || style === 'deepObject';
+    return { style: style, explode: explode };
+  }
+
+  // A parameter carried as `content` rather than `schema` is sent exactly as typed.
+  function paramValue(p, text) {
+    if (!p.schema && p.content) {
+      return text;
+    }
+    var kind = kindOf(p.schema);
+    if (kind === 'array') {
+      return text.split(',').map(function (v) { return v.trim(); });
+    }
+    if (kind === 'object') {
+      var value;
+      try {
+        value = JSON.parse(text);
+      } catch (e) {
+        value = null;
+      }
+      if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error(p.name + ' must be a JSON object, like {"key": "value"}.');
+      }
+      return value;
+    }
+    return text;
+  }
+
+  // One value as text. A nested object or array inside an object has no standard serialization
+  // outside deepObject, so it goes as JSON, which is what a server accepting one at all expects.
+  function scalar(value) {
+    return value === null || value === undefined ? ''
+      : typeof value === 'object' ? JSON.stringify(value) : String(value);
+  }
+
+  function entriesOf(value) {
+    return Object.keys(value).map(function (k) { return [k, scalar(value[k])]; });
+  }
+
+  // simple style, shared by path and header: a,b for an array; k,v,k,v for an object, or k=v,k=v
+  // exploded. `encode` is applied to every name and value, never to the separators.
+  function serializeSimple(p, value, explode, encode) {
+    if (Array.isArray(value)) {
+      return value.map(encode).join(',');
+    }
+    if (value && typeof value === 'object') {
+      return entriesOf(value).map(function (e) {
+        return encode(e[0]) + (explode ? '=' : ',') + encode(e[1]);
+      }).join(',');
+    }
+    return encode(value);
+  }
+
+  // label (.a.b), matrix (;id=a;id=b) or simple, percent-encoded into the path.
+  function serializePath(p, value) {
+    var s = styleOf(p);
+    var enc = encodeURIComponent;
+    if (s.style === 'label') {
+      var sep = s.explode ? '.' : ',';
+      if (Array.isArray(value)) {
+        return '.' + value.map(enc).join(sep);
+      }
+      if (value && typeof value === 'object') {
+        return '.' + entriesOf(value).map(function (e) {
+          return enc(e[0]) + (s.explode ? '=' : ',') + enc(e[1]);
+        }).join(sep);
+      }
+      return '.' + enc(value);
+    }
+    if (s.style === 'matrix') {
+      var name = enc(p.name);
+      if (Array.isArray(value)) {
+        return s.explode
+          ? value.map(function (v) { return ';' + name + '=' + enc(v); }).join('')
+          : ';' + name + '=' + value.map(enc).join(',');
+      }
+      if (value && typeof value === 'object') {
+        return s.explode
+          ? entriesOf(value).map(function (e) { return ';' + enc(e[0]) + '=' + enc(e[1]); }).join('')
+          : ';' + name + '=' + entriesOf(value).map(function (e) {
+            return enc(e[0]) + ',' + enc(e[1]);
+          }).join(',');
+      }
+      return ';' + name + '=' + enc(value);
+    }
+    return serializeSimple(p, value, s.explode, enc);
+  }
+
+  // deepObject: filter[color]=red, recursing into nested objects as filter[size][min]=1 and
+  // repeating the name for an array's items — the convention servers that take one follow.
+  function deepPairs(prefix, value, pairs) {
+    if (Array.isArray(value)) {
+      value.forEach(function (v) { deepPairs(prefix, v, pairs); });
+    } else if (value && typeof value === 'object') {
+      Object.keys(value).forEach(function (k) { deepPairs(prefix + '[' + k + ']', value[k], pairs); });
+    } else {
+      pairs.push([prefix, scalar(value)]);
+    }
+    return pairs;
+  }
+
+  // [name, value] pairs, unencoded: URLSearchParams encodes them when the URL is built.
+  function serializeQuery(p, value) {
+    var s = styleOf(p);
+    var name = p.name;
+    if (s.style === 'deepObject' && value && typeof value === 'object') {
+      return deepPairs(name, value, []);
+    }
+    var delimiter = s.style === 'spaceDelimited' ? ' ' : s.style === 'pipeDelimited' ? '|' : ',';
+    if (Array.isArray(value)) {
+      return s.explode
+        ? value.map(function (v) { return [name, v]; })
+        : [[name, value.join(delimiter)]];
+    }
+    if (value && typeof value === 'object') {
+      var entries = entriesOf(value);
+      return s.explode
+        ? entries
+        : [[name, entries.map(function (e) { return e[0] + delimiter + e[1]; }).join(delimiter)]];
+    }
+    return [[name, value]];
+  }
+
   function buildRequest(state) {
     var entry = state.entry;
     var req = { headers: new Headers(), query: [], body: undefined };
@@ -1227,18 +1845,13 @@
         }
         return;
       }
-      var schema = deref(p.schema) || {};
-      var values = schema.type === 'array' ? value.split(',').map(function (v) { return v.trim(); }) : [value];
+      var parsed = paramValue(p, value);
       if (p.in === 'path') {
-        path = path.split('{' + p.name + '}').join(values.map(encodeURIComponent).join(','));
+        path = path.split('{' + p.name + '}').join(serializePath(p, parsed));
       } else if (p.in === 'query') {
-        if (p.explode === false) {
-          req.query.push([p.name, values.join(',')]);
-        } else {
-          values.forEach(function (v) { req.query.push([p.name, v]); });
-        }
+        serializeQuery(p, parsed).forEach(function (pair) { req.query.push(pair); });
       } else if (p.in === 'header') {
-        req.headers.set(p.name, values.join(','));
+        req.headers.set(p.name, serializeSimple(p, parsed, styleOf(p).explode, String));
       }
     });
 
@@ -1249,6 +1862,10 @@
     state.auth.forEach(function (s) {
       s.handler.apply(req, credentials[s.name] || {}, s.scheme);
     });
+
+    if (state.accept && state.accept.value) {
+      req.headers.set('Accept', state.accept.value);
+    }
 
     if (state.body) {
       var type = state.body.typeSelect.value;
@@ -1264,23 +1881,37 @@
       }
       var encoded;
       try {
-        encoded = bodyHandlerFor(type).encode(text, files);
+        encoded = bodyHandlerFor(type, state.body.content[type]).encode(text, files);
       } catch (e) {
         throw new Error('The body is not valid for ' + type + ': ' + e.message);
       }
       if (encoded === undefined && state.body.required) {
-        throw new Error('The body is required.');
+        throw new Error(bodyHandlerFor(type, state.body.content[type]).whole
+          ? 'Choose a file to send as the body.'
+          : 'The body is required.');
       }
       if (encoded !== undefined) {
         req.body = encoded;
-        // FormData's Content-Type carries a boundary only the browser knows, so it writes it.
-        if (!(encoded instanceof FormData)) {
+        // FormData's Content-Type carries a boundary only the browser knows, so it writes it. A
+        // wildcard like image/* is no Content-Type at all; a file says what it is instead.
+        if (encoded instanceof Blob && type.indexOf('*') >= 0) {
+          req.headers.set('Content-Type', encoded.type || 'application/octet-stream');
+        } else if (!(encoded instanceof FormData)) {
           req.headers.set('Content-Type', type);
         }
       }
     }
 
-    var url = new URL(state.server.value.replace(/\/+$/, '') + path);
+    state.extraHeaders().forEach(function (pair) {
+      try {
+        req.headers.set(pair[0], pair[1]);
+      } catch (e) {
+        throw new Error('"' + pair[0] + '" can\'t be sent as a header: a name is letters, digits '
+          + 'and !#$%&\'*+-.^_`|~, and a value has no line breaks.');
+      }
+    });
+
+    var url = new URL(state.server.url().replace(/\/+$/, '') + path);
     req.query.forEach(function (pair) { url.searchParams.append(pair[0], pair[1]); });
     req.url = url;
     return req;
@@ -1379,10 +2010,48 @@
           ? '--form-string ' + shellQuote(name + '=' + value)
           : '-F ' + shellQuote(name + '=@' + value.name + (value.type ? ';type=' + value.type : '')));
       });
+    } else if (req.body instanceof Blob) {
+      parts.push('--data-binary ' + shellQuote('@' + (req.body.name || 'file')));
     } else if (req.body !== undefined) {
       parts.push('--data-raw ' + shellQuote(req.body));
     }
     return parts.join(' \\\n  ');
+  }
+
+  // The request as a fetch() call, for a browser console or a script. Strings go through
+  // JSON.stringify, which writes a valid JavaScript literal for any text. A file can't be put in
+  // code, so it is left as a named placeholder to fill in.
+  function fetchOf(method, req) {
+    var lines = [];
+    var init = ['  method: ' + JSON.stringify(method.toUpperCase()) + ','];
+    var headers = [];
+    req.headers.forEach(function (value, name) {
+      headers.push('    ' + JSON.stringify(name) + ': ' + JSON.stringify(value) + ',');
+    });
+    if (headers.length) {
+      init.push('  headers: {', headers.join('\n'), '  },');
+    }
+    if (req.body instanceof FormData) {
+      lines.push('const body = new FormData();');
+      req.body.forEach(function (value, name) {
+        lines.push(typeof value === 'string'
+          ? 'body.append(' + JSON.stringify(name) + ', ' + JSON.stringify(value) + ');'
+          : 'body.append(' + JSON.stringify(name) + ', file, ' + JSON.stringify(value.name)
+            + '); // a File or Blob: ' + value.name);
+      });
+      init.push('  body,');
+    } else if (req.body instanceof Blob) {
+      lines.push('const body = file; // a File or Blob: ' + (req.body.name || 'the body'));
+      init.push('  body,');
+    } else if (req.body !== undefined) {
+      init.push('  body: ' + JSON.stringify(req.body) + ',');
+    }
+    if (!config.cookies) {
+      init.push('  credentials: "omit",');
+    }
+    lines.push('const response = await fetch(' + JSON.stringify(req.url.href) + ', {',
+      init.join('\n'), '});');
+    return lines.join('\n');
   }
 
   // A button's label briefly replaced by what just happened to it.

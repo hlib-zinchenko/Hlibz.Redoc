@@ -25,7 +25,7 @@ namespace Sample.Shared;
 /// bug, every <c>widgets</c> endpoint documents a <c>500</c> alongside its own negative response
 /// with a distinct model, and every property carries a <c>[Description]</c>.
 /// </remarks>
-public static class SampleApi
+public static partial class SampleApi
 {
     /// <summary>Registers the three documents the picker switches between.</summary>
     public static IServiceCollection AddSampleDocuments(this IServiceCollection services)
@@ -59,13 +59,24 @@ public static class SampleApi
             .Produces<InternalErrorResponse>(StatusCodes.Status500InternalServerError)
             .WithGroupName("widgets");
 
-        app.MapGet("/widgets/{id:guid}", Results<Ok<Widget>, NotFound<ErrorResponse>> (Guid id) =>
+        // Sends an ETag and honours If-None-Match, which the spec doesn't list as a parameter —
+        // the usual case of a header an API takes that its document leaves out, and what the
+        // try-it console's extra headers are for.
+        app.MapGet("/widgets/{id:guid}", Results<Ok<Widget>, NotFound<ErrorResponse>, StatusCodeHttpResult> (Guid id, HttpContext context) =>
         {
             Widget? widget = Widget.Sample.FirstOrDefault(w => w.Id == id);
-            return widget is not null
-                ? TypedResults.Ok(widget)
-                : TypedResults.NotFound(new ErrorResponse("No widget matches the given id.", Guid.NewGuid().ToString()));
+            if (widget is null)
+            {
+                return TypedResults.NotFound(new ErrorResponse("No widget matches the given id.", Guid.NewGuid().ToString()));
+            }
+
+            string etag = $"\"{widget.Id:N}-1\"";
+            context.Response.Headers.ETag = etag;
+            return context.Request.Headers.IfNoneMatch.ToString() == etag
+                ? TypedResults.StatusCode(StatusCodes.Status304NotModified)
+                : TypedResults.Ok(widget);
         })
+            .Produces(StatusCodes.Status304NotModified)
             .Produces<InternalErrorResponse>(StatusCodes.Status500InternalServerError)
             .WithGroupName("widgets");
 
@@ -194,6 +205,8 @@ public static class SampleApi
             })
             .WithGroupName("widgets");
 
+        MapRequestShapes(app);
+
         IEnumerable<Manufacturer> manufacturers = Widget.Sample.Select(w => w.Manufacturer);
 
         app.MapGet("/manufacturers", () => TypedResults.Ok(manufacturers))
@@ -286,9 +299,6 @@ public static class SampleApi
         },
     };
 
-    /// <summary>The security scheme the widget catalog's write operations declare.</summary>
-    private const string BearerScheme = "bearer";
-
     /// <summary>
     /// Answers 401 unless the request carries a bearer token. Any non-empty token passes: this
     /// sample has nothing to check one against, and the point is a protected endpoint for the
@@ -309,7 +319,7 @@ public static class SampleApi
 
                 return await next(context);
             })
-            .WithMetadata(new SampleTokenRequired())
+            .WithMetadata(new SampleAuth(BearerScheme))
             .Produces(StatusCodes.Status401Unauthorized);
 
     // Endpoints without a group name land in every document, so each one is tagged via WithGroupName.
@@ -325,12 +335,13 @@ public static class SampleApi
                 return Task.CompletedTask;
             });
 
-            // Declared only where an endpoint actually asks for a token, so the documents without
-            // one stay free of a scheme nothing uses.
+            // Declared only where an endpoint actually asks for credentials, so the documents
+            // without any stay free of a scheme nothing uses.
             options.AddOperationTransformer((operation, context, _) =>
             {
-                if (!context.Description.ActionDescriptor.EndpointMetadata
-                    .OfType<SampleTokenRequired>().Any())
+                SampleAuth? auth = context.Description.ActionDescriptor.EndpointMetadata
+                    .OfType<SampleAuth>().FirstOrDefault();
+                if (auth is null)
                 {
                     return Task.CompletedTask;
                 }
@@ -339,18 +350,13 @@ public static class SampleApi
                 document.Components ??= new OpenApiComponents();
                 document.Components.SecuritySchemes ??=
                     new Dictionary<string, IOpenApiSecurityScheme>();
-                document.Components.SecuritySchemes[BearerScheme] = new OpenApiSecurityScheme
-                {
-                    Type = SecuritySchemeType.Http,
-                    Scheme = "bearer",
-                    Description = "Any non-empty token is accepted by this sample.",
-                };
+                document.Components.SecuritySchemes[auth.Scheme] = SchemeFor(auth.Scheme);
 
                 operation.Security =
                 [
                     new OpenApiSecurityRequirement
                     {
-                        [new OpenApiSecuritySchemeReference(BearerScheme, document)] = [],
+                        [new OpenApiSecuritySchemeReference(auth.Scheme, document)] = [],
                     },
                 ];
                 return Task.CompletedTask;
@@ -358,6 +364,6 @@ public static class SampleApi
         });
     }
 
-    /// <summary>Marks an endpoint <see cref="RequireSampleToken"/> protects.</summary>
-    private sealed class SampleTokenRequired;
+    /// <summary>Marks an endpoint protected by one of the sample's three schemes.</summary>
+    private sealed record SampleAuth(string Scheme);
 }

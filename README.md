@@ -72,7 +72,7 @@ Both adapters behave identically; the package reference differs, the code doesn'
 | Strict CSP | `script-src 'self'`, no nonce — nothing is inline | needs a nonce; the host's own `Redoc.init` is inline |
 | Third-party requests | none; ReDoc telemetry off by default | Google Fonts, unless you call `UseSystemFonts()` |
 | Print stylesheet | yes | yes |
-| "Try it" console | yes, opt-in: JSON and form bodies; bearer, Basic, API-key and pasted OAuth tokens | no |
+| "Try it" console | yes, opt-in: JSON, form and file bodies; bearer, Basic, API-key and pasted OAuth tokens | no |
 | Dependencies | ASP.NET Core only | the host package |
 
 ## What this doesn't do

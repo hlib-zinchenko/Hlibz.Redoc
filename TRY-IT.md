@@ -188,10 +188,21 @@ the button only on GET, HEAD, OPTIONS, TRACE and QUERY — a convenience for doc
 system, not access control. Then `multipart/form-data`, with a file picker per binary property
 (found through `$ref` and `allOf`, the shape ASP.NET Core gives an `IFormFile` beside other form
 fields), and a notice when `fetch` followed a redirect — otherwise a sign-in page's `200` was
-matched against the operation's own and shown as success.
+matched against the operation's own and shown as success. Then four fixes to requests that went
+out wrong: parameters in their declared `style` (`label`/`matrix` in the path; `spaceDelimited`,
+`pipeDelimited` and `deepObject` in the query; an object typed as JSON); an **Accept** select when
+the 2XX responses offer more than one media type, left off with only one so an error's different
+type can't earn a 406; a whole-file body for a binary schema, or a non-text media type with no
+schema, sent as the `File` itself (a wildcard type takes the file's own `Content-Type`); and
+server variables as fields, an `enum` as a select, kept per server template in the draft.
+Then five conveniences: extra headers, sent last so one can override the panel's own; a variant
+picker for a `oneOf`/`anyOf` body with no example of its own, putting the discriminator's mapped
+name first (System.Text.Json reads it from the first property only); warn-only checks on
+parameter values (type, `enum`, length, `pattern`, range, item count, a few formats); a
+deprecation note; and Copy as fetch beside Copy as cURL.
 
 **Not doing**: the 2.x adapters, YAML specs (a YAML page renders, with no buttons, and the
-README says so), `servers` variables beyond plain substitution.
+README says so).
 
 ## Testing
 
