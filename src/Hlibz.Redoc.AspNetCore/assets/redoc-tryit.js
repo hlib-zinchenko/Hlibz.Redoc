@@ -329,11 +329,80 @@
     });
   }
 
+  // A body whose schema is a oneOf/anyOf — a polymorphic type, as ASP.NET Core describes one with
+  // [JsonDerivedType] — offers each branch as a starting point, when the media type gives no
+  // example of its own to start from. Labelled by the discriminator's name for the branch when
+  // there is one (and its sample then carries that name in the discriminator property, which the
+  // branch's own schema often leaves out), else by the branch's title or schema name.
+  function variantsOf(media) {
+    if (!media || media.example !== undefined || namedExamples(media).length) {
+      return [];
+    }
+    var schema = deref(media.schema) || {};
+    var choice = schema.oneOf || schema.anyOf;
+    if (!Array.isArray(choice)) {
+      return [];
+    }
+    var disc = schema.discriminator && typeof schema.discriminator === 'object'
+      ? schema.discriminator : {};
+    var mapping = disc.mapping || {};
+    var list = choice.map(function (branch, i) {
+      var target = deref(branch) || {};
+      if (target.type === 'null') {
+        return null;
+      }
+      var ref = branch && typeof branch.$ref === 'string' ? branch.$ref : null;
+      var schemaName = ref ? unescapePointer(ref.split('/').pop()) : null;
+      var tag = ref ? Object.keys(mapping).filter(function (k) { return mapping[k] === ref; })[0]
+        : undefined;
+      if (!tag && schemaName && disc.propertyName) {
+        tag = schemaName;
+      }
+      return {
+        key: 'variant:' + i,
+        label: tag || target.title || schemaName || 'Option ' + (i + 1),
+        branch: branch,
+        tag: disc.propertyName ? tag : undefined,
+        property: disc.propertyName,
+      };
+    }).filter(Boolean);
+    return list.length > 1 ? list : [];
+  }
+
+  function variantSample(variant) {
+    var value = sampleOf(variant.branch);
+    if (variant.tag !== undefined && value && typeof value === 'object' && !Array.isArray(value)) {
+      // The discriminator first, as a reader expects it, and with the mapped name rather than
+      // whatever the branch's schema sampled for it.
+      var tagged = {};
+      tagged[variant.property] = variant.tag;
+      Object.keys(value).forEach(function (k) {
+        if (k !== variant.property) {
+          tagged[k] = value[k];
+        }
+      });
+      value = tagged;
+    }
+    return value;
+  }
+
+  // What the Example select offers for a media type: its named examples, else its variants.
+  function exampleChoices(media) {
+    var named = namedExamples(media);
+    return named.length ? named : variantsOf(media);
+  }
+
   // The example a media type entry declares — the named one asked for, else its example, else its
-  // first named one — before falling back to its schema.
+  // first named one — before falling back to its schema (through its first variant, if it has
+  // variants, so even that one carries its discriminator).
   function mediaExample(media, name) {
     if (!media) {
       return undefined;
+    }
+    var variants = variantsOf(media);
+    var variant = variants.filter(function (v) { return v.key === name; })[0] || variants[0];
+    if (variant) {
+      return variantSample(variant);
     }
     var named = namedExamples(media);
     var chosen = named.filter(function (n) { return n.key === name; })[0];
@@ -831,6 +900,7 @@
       server: state.server.template(),
       serverValues: state.server.values(),
       accept: state.accept ? state.accept.value : undefined,
+      headers: state.extraHeaders(),
       params: {},
       body: null,
       response: null,
@@ -976,6 +1046,105 @@
       .filter(function (v) { return v !== null && typeof v !== 'object'; })
       .map(String);
     return values.length ? values : null;
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Light checks on what was typed into a parameter, against its schema: type, enum, length,
+  // pattern, range, item count and a few formats. Each problem is one sentence; none stops a send.
+
+  var FORMAT_CHECKS = {
+    uuid: [/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, 'a UUID'],
+    date: [/^\d{4}-\d{2}-\d{2}$/, 'a date like 2024-01-31'],
+    'date-time': [/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/i,
+      'a date-time like 2024-01-31T12:00:00Z'],
+    email: [/^[^\s@]+@[^\s@]+$/, 'an email address'],
+  };
+
+  function valueWarnings(schema, text, what) {
+    schema = deref(schema) || {};
+    var found = [];
+    var type = [].concat(schema.type || []).filter(function (t) { return t !== 'null'; })[0];
+    if (type === 'integer' || type === 'number') {
+      var n = Number(text);
+      if (text.trim() === '' || isNaN(n)) {
+        return [what + ' should be a number.'];
+      }
+      if (type === 'integer' && Math.floor(n) !== n) {
+        found.push(what + ' should be a whole number.');
+      }
+      if (typeof schema.minimum === 'number'
+          && (schema.exclusiveMinimum === true ? n <= schema.minimum : n < schema.minimum)) {
+        found.push(what + ' should be ' + (schema.exclusiveMinimum === true ? 'more than ' : 'at least ')
+          + schema.minimum + '.');
+      }
+      if (typeof schema.exclusiveMinimum === 'number' && n <= schema.exclusiveMinimum) {
+        found.push(what + ' should be more than ' + schema.exclusiveMinimum + '.');
+      }
+      if (typeof schema.maximum === 'number'
+          && (schema.exclusiveMaximum === true ? n >= schema.maximum : n > schema.maximum)) {
+        found.push(what + ' should be ' + (schema.exclusiveMaximum === true ? 'less than ' : 'at most ')
+          + schema.maximum + '.');
+      }
+      if (typeof schema.exclusiveMaximum === 'number' && n >= schema.exclusiveMaximum) {
+        found.push(what + ' should be less than ' + schema.exclusiveMaximum + '.');
+      }
+    } else if (type === 'boolean') {
+      if (text !== 'true' && text !== 'false') {
+        found.push(what + ' should be true or false.');
+      }
+    }
+    if (Array.isArray(schema.enum) && schema.enum.length
+        && schema.enum.map(String).indexOf(text) < 0) {
+      found.push(what + ' should be one of ' + schema.enum.map(String).join(', ') + '.');
+    }
+    if (typeof schema.minLength === 'number' && text.length < schema.minLength) {
+      found.push(what + ' should be at least ' + schema.minLength + ' characters.');
+    }
+    if (typeof schema.maxLength === 'number' && text.length > schema.maxLength) {
+      found.push(what + ' should be at most ' + schema.maxLength + ' characters.');
+    }
+    if (typeof schema.pattern === 'string') {
+      try {
+        if (!new RegExp(schema.pattern).test(text)) {
+          found.push(what + ' should match ' + schema.pattern + '.');
+        }
+      } catch (e) { /* a pattern JavaScript can't read is not the viewer's problem */ }
+    }
+    var format = FORMAT_CHECKS[schema.format];
+    if (format && !format[0].test(text)) {
+      found.push(what + ' should be ' + format[1] + '.');
+    }
+    return found;
+  }
+
+  function paramWarnings(p, text) {
+    if (!p.schema) {
+      return [];
+    }
+    var schema = deref(p.schema) || {};
+    var kind = kindOf(schema);
+    if (kind === 'object') {
+      return []; // paramValue says so on Send if it isn't JSON; deeper checks are the server's.
+    }
+    if (kind === 'array') {
+      var items = text.split(',').map(function (v) { return v.trim(); });
+      var found = [];
+      if (typeof schema.minItems === 'number' && items.length < schema.minItems) {
+        found.push('Give at least ' + schema.minItems + ' values.');
+      }
+      if (typeof schema.maxItems === 'number' && items.length > schema.maxItems) {
+        found.push('Give at most ' + schema.maxItems + ' values.');
+      }
+      items.forEach(function (item) {
+        valueWarnings(schema.items, item, '"' + item + '"').forEach(function (w) {
+          if (found.indexOf(w) < 0) {
+            found.push(w);
+          }
+        });
+      });
+      return found;
+    }
+    return valueWarnings(schema, text, 'The value');
   }
 
   // The type, how to type it, and the style it goes out in when that isn't the location's default,
@@ -1197,10 +1366,74 @@
             : paramDefault(p);
           state.params.push({ param: p, input: input });
           var label = h('span', null, h('code', { text: p.name }),
-            required ? h('span', { class: 'hlibz-tryit-required', text: ' required' }) : null);
-          return field(label, input, paramHint(p));
+            required ? h('span', { class: 'hlibz-tryit-required', text: ' required' }) : null,
+            p.deprecated ? h('span', { class: 'hlibz-tryit-deprecated-tag', text: ' deprecated' }) : null);
+          var row = field(label, input, paramHint(p));
+          // What the schema says the value should be, said as the viewer types: a warning, never a
+          // refusal, because sending a bad value on purpose is half of what a console is for.
+          var warning = h('span', { class: 'hlibz-tryit-check', 'aria-live': 'polite', hidden: true });
+          var check = function () {
+            var problems = input.value === '' ? [] : paramWarnings(p, input.value);
+            warning.textContent = problems.join(' ');
+            warning.hidden = !problems.length;
+          };
+          input.addEventListener('input', check);
+          input.addEventListener('change', check);
+          check();
+          row.appendChild(warning);
+          return row;
         }));
     });
+
+    // Headers the spec doesn't declare: a correlation id, If-Match, a tenant or version header. One
+    // row each, added on demand, and sent after everything else so one can override what the
+    // console set itself (Accept, say).
+    var headerRows = [];
+    var headerList = h('div', { class: 'hlibz-tryit-header-rows' });
+    var addHeader = function (name, value, focus) {
+      var row = {
+        name: h('input', { class: 'hlibz-tryit-input', type: 'text', spellcheck: 'false',
+          placeholder: 'Name', 'aria-label': 'Header name', value: name || '' }),
+        value: h('input', { class: 'hlibz-tryit-input', type: 'text', spellcheck: 'false',
+          placeholder: 'Value', 'aria-label': 'Header value', value: value || '' }),
+      };
+      row.node = h('div', { class: 'hlibz-tryit-header-row' }, row.name, row.value,
+        h('button', {
+          type: 'button',
+          class: 'hlibz-tryit-ghost',
+          'aria-label': 'Remove header',
+          title: 'Remove',
+          text: '×',
+          onclick: function () {
+            headerRows.splice(headerRows.indexOf(row), 1);
+            row.node.remove();
+            addButton.focus();
+          },
+        }));
+      headerRows.push(row);
+      headerList.appendChild(row.node);
+      if (focus) {
+        row.name.focus();
+      }
+    };
+    var addButton = h('button', {
+      type: 'button',
+      class: 'hlibz-tryit-ghost',
+      text: 'Add header',
+      onclick: function () { addHeader('', '', true); },
+    });
+    ((draft && draft.headers) || []).forEach(function (pair) { addHeader(pair[0], pair[1]); });
+    state.extraHeaders = function () {
+      return headerRows.map(function (row) { return [row.name.value.trim(), row.value.value]; })
+        .filter(function (pair) { return pair[0] !== ''; });
+    };
+    var headersSection = h('section', { class: 'hlibz-tryit-section' },
+      h('h3', { text: 'Extra headers' }),
+      headerList,
+      h('div', { class: 'hlibz-tryit-body-bar' },
+        h('span', { class: 'hlibz-tryit-hint',
+          text: 'Headers the spec doesn\'t list. A browser won\'t send some, like Cookie or Host.' }),
+        h('span', { class: 'hlibz-tryit-push' }, addButton)));
 
     // Cookie parameters get no field, since a page can't set a request's Cookie header. Named
     // rather than left out, so a request that fails for want of one says why.
@@ -1270,8 +1503,11 @@
       // Offered only when the media type names more than one example; each type has its own.
       var exampleSelect = h('select', { class: 'hlibz-tryit-input' });
       var exampleField = field('Example', exampleSelect);
+      var exampleLabel = exampleField.querySelector('.hlibz-tryit-label');
       var listExamples = function () {
-        var named = namedExamples(requestBody.content[typeSelect.value]);
+        var media = requestBody.content[typeSelect.value];
+        var named = exampleChoices(media);
+        exampleLabel.textContent = namedExamples(media).length ? 'Example' : 'Variant';
         exampleSelect.replaceChildren.apply(exampleSelect, named.map(function (n) {
           return h('option', { value: n.key, text: n.label });
         }));
@@ -1307,7 +1543,7 @@
       listExamples();
       renderFiles();
       if (draft && draft.body && draft.body.type === typeSelect.value && draft.body.example
-          && namedExamples(requestBody.content[typeSelect.value])
+          && exampleChoices(requestBody.content[typeSelect.value])
             .some(function (n) { return n.key === draft.body.example; })) {
         exampleSelect.value = draft.body.example;
       }
@@ -1366,24 +1602,33 @@
         }
       },
     });
-    var curlButton = h('button', {
-      type: 'button',
-      class: 'hlibz-tryit-ghost hlibz-tryit-push',
-      text: 'Copy as cURL',
-      title: 'Includes the credentials typed here. The browser\'s cookies are not included.',
-      onclick: function () {
-        var req;
-        try {
-          req = buildRequest(state);
-        } catch (e) {
-          showError(e.message);
-          return;
-        }
-        copyText(curlOf(entry.method, req)).then(
-          function () { flash(curlButton, 'Copied'); },
-          function () { flash(curlButton, 'Copy failed'); });
-      },
-    });
+    // The same request as code to paste elsewhere: a terminal, or a browser's console.
+    var copyAs = function (label, render, title) {
+      var button = h('button', {
+        type: 'button',
+        class: 'hlibz-tryit-ghost',
+        text: label,
+        title: title,
+        onclick: function () {
+          var req;
+          try {
+            req = buildRequest(state);
+          } catch (e) {
+            showError(e.message);
+            return;
+          }
+          copyText(render(entry.method, req)).then(
+            function () { flash(button, 'Copied'); },
+            function () { flash(button, 'Copy failed'); });
+        },
+      });
+      return button;
+    };
+    var copyButtons = h('span', { class: 'hlibz-tryit-push hlibz-tryit-copy-as' },
+      copyAs('Copy as cURL', curlOf,
+        'Includes the credentials typed here. The browser\'s cookies are not included.'),
+      copyAs('Copy as fetch', fetchOf,
+        'Includes the credentials typed here. Run on this site, it sends the browser\'s cookies too.'));
     state.response = h('div', { class: 'hlibz-tryit-response', 'aria-live': 'polite' });
     if (draft && draft.response) {
       state.response.replaceChildren.apply(state.response, draft.response);
@@ -1397,19 +1642,25 @@
         h('button', { type: 'button', class: 'hlibz-tryit-close', 'aria-label': 'Close', text: '×', onclick: function () { dialog.close(); } })),
       h('div', { class: 'hlibz-tryit-body' },
         op.summary ? h('p', { class: 'hlibz-tryit-summary', text: op.summary }) : null,
+        op.deprecated === true
+          ? h('p', { class: 'hlibz-tryit-undocumented hlibz-tryit-deprecated', role: 'note',
+            text: 'Deprecated: this operation still answers, but may be removed. '
+              + 'The docs above may say what to use instead.' })
+          : null,
         h('section', { class: 'hlibz-tryit-section' },
           field('Server', serverSelect),
           varsBox,
           acceptSelect ? field('Accept', acceptSelect) : null),
         authSection,
         paramSections,
+        headersSection,
         cookieSection,
         bodySection,
         h('div', { class: 'hlibz-tryit-actions' },
           sendButton,
           state.cancelButton,
           h('span', { class: 'hlibz-tryit-hint', text: (/Mac|iPhone|iPad/.test(navigator.userAgent) ? '⌘' : 'Ctrl') + '+Enter' }),
-          curlButton),
+          copyButtons),
         state.response));
 
     if (!dialog.open) {
@@ -1651,6 +1902,15 @@
       }
     }
 
+    state.extraHeaders().forEach(function (pair) {
+      try {
+        req.headers.set(pair[0], pair[1]);
+      } catch (e) {
+        throw new Error('"' + pair[0] + '" can\'t be sent as a header: a name is letters, digits '
+          + 'and !#$%&\'*+-.^_`|~, and a value has no line breaks.');
+      }
+    });
+
     var url = new URL(state.server.url().replace(/\/+$/, '') + path);
     req.query.forEach(function (pair) { url.searchParams.append(pair[0], pair[1]); });
     req.url = url;
@@ -1756,6 +2016,42 @@
       parts.push('--data-raw ' + shellQuote(req.body));
     }
     return parts.join(' \\\n  ');
+  }
+
+  // The request as a fetch() call, for a browser console or a script. Strings go through
+  // JSON.stringify, which writes a valid JavaScript literal for any text. A file can't be put in
+  // code, so it is left as a named placeholder to fill in.
+  function fetchOf(method, req) {
+    var lines = [];
+    var init = ['  method: ' + JSON.stringify(method.toUpperCase()) + ','];
+    var headers = [];
+    req.headers.forEach(function (value, name) {
+      headers.push('    ' + JSON.stringify(name) + ': ' + JSON.stringify(value) + ',');
+    });
+    if (headers.length) {
+      init.push('  headers: {', headers.join('\n'), '  },');
+    }
+    if (req.body instanceof FormData) {
+      lines.push('const body = new FormData();');
+      req.body.forEach(function (value, name) {
+        lines.push(typeof value === 'string'
+          ? 'body.append(' + JSON.stringify(name) + ', ' + JSON.stringify(value) + ');'
+          : 'body.append(' + JSON.stringify(name) + ', file, ' + JSON.stringify(value.name)
+            + '); // a File or Blob: ' + value.name);
+      });
+      init.push('  body,');
+    } else if (req.body instanceof Blob) {
+      lines.push('const body = file; // a File or Blob: ' + (req.body.name || 'the body'));
+      init.push('  body,');
+    } else if (req.body !== undefined) {
+      init.push('  body: ' + JSON.stringify(req.body) + ',');
+    }
+    if (!config.cookies) {
+      init.push('  credentials: "omit",');
+    }
+    lines.push('const response = await fetch(' + JSON.stringify(req.url.href) + ', {',
+      init.join('\n'), '});');
+    return lines.join('\n');
   }
 
   // A button's label briefly replaced by what just happened to it.

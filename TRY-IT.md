@@ -195,6 +195,11 @@ the 2XX responses offer more than one media type, left off with only one so an e
 type can't earn a 406; a whole-file body for a binary schema, or a non-text media type with no
 schema, sent as the `File` itself (a wildcard type takes the file's own `Content-Type`); and
 server variables as fields, an `enum` as a select, kept per server template in the draft.
+Then five conveniences: extra headers, sent last so one can override the panel's own; a variant
+picker for a `oneOf`/`anyOf` body with no example of its own, putting the discriminator's mapped
+name first (System.Text.Json reads it from the first property only); warn-only checks on
+parameter values (type, `enum`, length, `pattern`, range, item count, a few formats); a
+deprecation note; and Copy as fetch beside Copy as cURL.
 
 **Not doing**: the 2.x adapters, YAML specs (a YAML page renders, with no buttons, and the
 README says so).

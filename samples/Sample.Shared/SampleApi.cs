@@ -59,13 +59,24 @@ public static partial class SampleApi
             .Produces<InternalErrorResponse>(StatusCodes.Status500InternalServerError)
             .WithGroupName("widgets");
 
-        app.MapGet("/widgets/{id:guid}", Results<Ok<Widget>, NotFound<ErrorResponse>> (Guid id) =>
+        // Sends an ETag and honours If-None-Match, which the spec doesn't list as a parameter —
+        // the usual case of a header an API takes that its document leaves out, and what the
+        // try-it console's extra headers are for.
+        app.MapGet("/widgets/{id:guid}", Results<Ok<Widget>, NotFound<ErrorResponse>, StatusCodeHttpResult> (Guid id, HttpContext context) =>
         {
             Widget? widget = Widget.Sample.FirstOrDefault(w => w.Id == id);
-            return widget is not null
-                ? TypedResults.Ok(widget)
-                : TypedResults.NotFound(new ErrorResponse("No widget matches the given id.", Guid.NewGuid().ToString()));
+            if (widget is null)
+            {
+                return TypedResults.NotFound(new ErrorResponse("No widget matches the given id.", Guid.NewGuid().ToString()));
+            }
+
+            string etag = $"\"{widget.Id:N}-1\"";
+            context.Response.Headers.ETag = etag;
+            return context.Request.Headers.IfNoneMatch.ToString() == etag
+                ? TypedResults.StatusCode(StatusCodes.Status304NotModified)
+                : TypedResults.Ok(widget);
         })
+            .Produces(StatusCodes.Status304NotModified)
             .Produces<InternalErrorResponse>(StatusCodes.Status500InternalServerError)
             .WithGroupName("widgets");
 

@@ -64,6 +64,17 @@ public static partial class SampleApi
                 found = found.Where(w => w.Price <= max);
             }
 
+            string? name = query["name"];
+            if (!string.IsNullOrEmpty(name))
+            {
+                found = found.Where(w => w.Name.Contains(name, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (int.TryParse(query["limit"], out int limit) && limit > 0)
+            {
+                found = found.Take(limit);
+            }
+
             return TypedResults.Ok(new WidgetSearchResult(RawTarget(context), [.. found]));
         })
             .WithName("SearchWidgets")
@@ -73,6 +84,27 @@ public static partial class SampleApi
             {
                 operation.Parameters =
                 [
+                    // Constraints the console checks as you type, warning rather than refusing.
+                    new OpenApiParameter
+                    {
+                        Name = "name", In = ParameterLocation.Query,
+                        Description = "Part of the widget's name, 2 to 40 characters.",
+                        Schema = new OpenApiSchema
+                        {
+                            Type = JsonSchemaType.String, MinLength = 2, MaxLength = 40,
+                        },
+                        Example = "Keyboard",
+                    },
+                    new OpenApiParameter
+                    {
+                        Name = "limit", In = ParameterLocation.Query,
+                        Description = "At most this many widgets, from 1 to 50.",
+                        Schema = new OpenApiSchema
+                        {
+                            Type = JsonSchemaType.Integer, Minimum = "1", Maximum = "50",
+                        },
+                        Example = 10,
+                    },
                     new OpenApiParameter
                     {
                         Name = "status", In = ParameterLocation.Query,
@@ -99,7 +131,12 @@ public static partial class SampleApi
                         Schema = new OpenApiSchema
                         {
                             Type = JsonSchemaType.Array,
-                            Items = new OpenApiSchema { Type = JsonSchemaType.String },
+                            Items = new OpenApiSchema
+                            {
+                                Type = JsonSchemaType.String,
+                                Enum = [.. Widget.Sample.SelectMany(w => w.Tags).Distinct()
+                                    .Select(t => (JsonNode)t)],
+                            },
                         },
                         Example = new JsonArray("electronics", "furniture"),
                     },
@@ -221,6 +258,55 @@ public static partial class SampleApi
                         ["image/*"] = new(),
                     },
                 };
+                return Task.CompletedTask;
+            });
+
+        // A polymorphic body: ASP.NET Core describes Promotion as an anyOf with a discriminator,
+        // so the console offers each kind as a variant to start from.
+        app.MapPost("/widgets/{id:guid}/promotions", Results<Created<Promotion>, NotFound<ErrorResponse>, BadRequest<ValidationErrorResponse>> (Guid id, Promotion promotion) =>
+        {
+            if (!Widget.Sample.Any(w => w.Id == id))
+            {
+                return TypedResults.NotFound(new ErrorResponse("No widget matches the given id.", Guid.NewGuid().ToString()));
+            }
+
+            if (promotion is PercentOffPromotion { Percent: < 1 or > 99 })
+            {
+                return TypedResults.BadRequest(new ValidationErrorResponse(
+                    "One or more fields failed validation.",
+                    new Dictionary<string, string[]> { ["percent"] = ["Percent must be from 1 to 99."] }));
+            }
+
+            return TypedResults.Created($"/widgets/{id}/promotions/{Guid.NewGuid()}", promotion);
+        })
+            .WithSummary("Start a promotion")
+            .RequireSampleToken()
+            .WithGroupName("widgets");
+
+        // Deprecated in favour of search, and marked so: ReDoc badges it, and the console says so
+        // at the top of its panel.
+        app.MapGet("/widgets/by-name/{name}", Results<Ok<Widget>, NotFound<ErrorResponse>> (string name) =>
+        {
+            Widget? widget = Widget.Sample.FirstOrDefault(
+                w => string.Equals(w.Name, name, StringComparison.OrdinalIgnoreCase));
+            return widget is not null
+                ? TypedResults.Ok(widget)
+                : TypedResults.NotFound(new ErrorResponse("No widget has that name.", Guid.NewGuid().ToString()));
+        })
+            .WithSummary("Find a widget by its exact name")
+            .WithDescription("Deprecated: use **Search widgets** with `name`, which matches part of a name.")
+            .WithGroupName("widgets")
+            .AddOpenApiOperationTransformer((operation, _, _) =>
+            {
+                operation.Deprecated = true;
+                foreach (IOpenApiParameter parameter in operation.Parameters ?? [])
+                {
+                    if (parameter is OpenApiParameter { Name: "name" } concrete)
+                    {
+                        concrete.Example = "Mechanical Keyboard";
+                    }
+                }
+
                 return Task.CompletedTask;
             });
 

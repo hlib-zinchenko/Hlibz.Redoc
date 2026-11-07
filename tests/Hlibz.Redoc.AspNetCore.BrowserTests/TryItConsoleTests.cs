@@ -135,8 +135,8 @@ public sealed class TryItConsoleTests(TryItSite site) : IAsyncLifetime
         // pipeDelimited, then deepObject; the response carries the target as it arrived.
         await Expect(Status(dialog)).ToHaveTextAsync("200");
         await Expect(Response(dialog)).ToContainTextAsync(
-            "/widgets/search?status=Active&shipping=true&tags=electronics%7Cfurniture"
-            + "&price%5Bmin%5D=100&price%5Bmax%5D=400");
+            "/widgets/search?name=Keyboard&limit=10&status=Active&shipping=true"
+            + "&tags=electronics%7Cfurniture&price%5Bmin%5D=100&price%5Bmax%5D=400");
         await Expect(Response(dialog)).ToContainTextAsync("Mechanical Keyboard");
         await Expect(Response(dialog)).Not.ToContainTextAsync("Standing Desk");
     }
@@ -151,6 +151,100 @@ public sealed class TryItConsoleTests(TryItSite site) : IAsyncLifetime
 
         await Expect(dialog.Locator(".hlibz-tryit-error"))
             .ToHaveTextAsync("price must be a JSON object, like {\"key\": \"value\"}.");
+    }
+
+    [Fact]
+    public async Task Search_WarnsAboutValuesOutsideTheSchemaButStillSends()
+    {
+        ILocator dialog = await OpenAtAsync("searchwidgets");
+        ILocator warnings = dialog.Locator(".hlibz-tryit-check:visible");
+        await Expect(warnings).ToHaveCountAsync(0);
+
+        await Field(dialog, "name").FillAsync("K");
+        await Field(dialog, "limit").FillAsync("500");
+        await Field(dialog, "tags").FillAsync("electronics,toys");
+
+        await Expect(warnings).ToHaveTextAsync(
+        [
+            "The value should be at least 2 characters.",
+            "The value should be at most 50.",
+            "\"toys\" should be one of electronics, peripherals, furniture.",
+        ]);
+
+        // A warning, not a refusal: sending a bad value on purpose is half of what this is for.
+        await SendAsync(dialog);
+        await Expect(Status(dialog)).ToHaveTextAsync("200");
+    }
+
+    [Fact]
+    public async Task ExtraHeader_IfNoneMatch_GetsA304()
+    {
+        ILocator dialog = await OpenAsync("/widgets/{id}", "get");
+        await Field(dialog, "id").FillAsync(KeyboardId);
+        await SendAsync(dialog);
+        await Expect(Status(dialog)).ToHaveTextAsync("200");
+
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Add header" }).ClickAsync();
+        await dialog.GetByLabel("Header name").FillAsync("bad name");
+        await SendAsync(dialog);
+        await Expect(dialog.Locator(".hlibz-tryit-error")).ToContainTextAsync(
+            "\"bad name\" can't be sent as a header");
+
+        await dialog.GetByLabel("Header name").FillAsync("If-None-Match");
+        await dialog.GetByLabel("Header value").FillAsync($"\"{Guid.Parse(KeyboardId):N}-1\"");
+        await SendAsync(dialog);
+        await Expect(Status(dialog)).ToHaveTextAsync("304");
+    }
+
+    [Fact]
+    public async Task Promotion_OffersEachKindAsAVariantWithItsDiscriminator()
+    {
+        ILocator dialog = await OpenAsync("/widgets/{id}/promotions", "post");
+        await Field(dialog, "Token").FillAsync("any-token");
+        await Field(dialog, "id").FillAsync(KeyboardId);
+
+        ILocator body = dialog.Locator("textarea");
+        await Expect(body).ToHaveValueAsync(new Regex("^\\{\\s*\"kind\": \"percentOff\""));
+
+        await Field(dialog, "Variant").SelectOptionAsync("fixedPrice");
+        await Expect(body).ToHaveValueAsync(new Regex("^\\{\\s*\"kind\": \"fixedPrice\""));
+        await SendAsync(dialog);
+
+        // The server reads the discriminator, and only from the first property: it's put there.
+        await Expect(Status(dialog)).ToHaveTextAsync("201");
+        await Expect(Response(dialog)).ToContainTextAsync("fixedPrice");
+    }
+
+    [Fact]
+    public async Task DeprecatedOperation_SaysSoAndStillSends()
+    {
+        ILocator dialog = await OpenAsync("/widgets/by-name/{name}", "get");
+
+        await Expect(dialog.Locator(".hlibz-tryit-deprecated")).ToContainTextAsync("Deprecated");
+        await SendAsync(dialog);
+        await Expect(Status(dialog)).ToHaveTextAsync("200");
+        await Expect(Response(dialog)).ToContainTextAsync("Mechanical Keyboard");
+    }
+
+    [Fact]
+    public async Task CopyAsFetch_IsCodeThatSendsTheSameRequest()
+    {
+        await context.GrantPermissionsAsync(
+            ["clipboard-read", "clipboard-write"], new() { Origin = site.Address });
+        ILocator dialog = await OpenAsync("/widgets", "post");
+        await Field(dialog, "Token").FillAsync("any-token");
+
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Copy as fetch" }).ClickAsync();
+        string code = await page.EvaluateAsync<string>("() => navigator.clipboard.readText()");
+
+        Assert.StartsWith($"const response = await fetch(\"{site.Address}/widgets\", {{", code);
+        Assert.Contains("\"authorization\": \"Bearer any-token\"", code);
+
+        // Run as written, it gets what the console's own Send got.
+        int status = await page.EvaluateAsync<int>(
+            "code => new (async function () {}).constructor(code + '\\nreturn response.status;')()",
+            code);
+        Assert.Equal(201, status);
     }
 
     [Fact]

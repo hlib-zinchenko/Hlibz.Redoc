@@ -281,6 +281,13 @@ takes one project at a time.
       when the 2XX responses name more than one media type: with one there is nothing to choose,
       and narrowing Accept could only earn a 406 on an error documented in another type. Server
       `{variables}` resolve on Send, not at listing, so a server missing a default still lists.
+    - Parameter checks (`paramWarnings`) only ever **warn**: a console that refused out-of-range
+      values couldn't be used to test a server's validation. Their class is `hlibz-tryit-check`;
+      `hlibz-tryit-warning` is already the amber status badge, and reusing it painted every
+      warning as a solid bar. Variants (`variantsOf`) are offered only when a media type has no
+      `example` or named `examples`, and the discriminator goes **first** in the sample, because
+      System.Text.Json reads it from the first property only. Extra headers are applied after
+      everything else in `buildRequest`, so they can override Accept and the like.
     - `ReDocTryItTests` covers the server half only; the script's behaviour is
       `tests/Hlibz.Redoc.AspNetCore.BrowserTests` (Playwright, a smoke test of the paths a person
       checks by hand). It finds operations by anchor, so it reads the tag's slug off the sidebar
@@ -462,7 +469,11 @@ takes one project at a time.
   drop-downs, `pipeDelimited`, `deepObject`, named by operationId), `GET /widgets/compare/{ids}`
   (path in `matrix` style), `GET /widgets/export` (JSON or CSV by Accept, behind an API key),
   `PUT /widgets/{id}/datasheet` (a whole-file body, PDF or `image/*`, behind Basic) and
-  `GET /widgets/availability` (an operation-level server with a `{region}` variable). Search and
+  `GET /widgets/availability` (an operation-level server with a `{region}` variable),
+  `POST /widgets/{id}/promotions` (a `[JsonDerivedType]` body, for the variant picker) and
+  `GET /widgets/by-name/{name}` (deprecated). Search also carries `name` and `limit` with length
+  and range limits, and `tags` items an `enum`, for the warn-only checks; `GET /widgets/{id}`
+  sends an ETag and answers `If-None-Match` with a 304, which is what extra headers are for. Search and
   compare echo the raw request target as `received`, so a style's wire format can be read off the
   response. The Basic filter answers 401 with a non-`Basic` `WWW-Authenticate` on purpose: `Basic`
   would make the browser pop its own login dialog over the docs. A second `Produces` for the same

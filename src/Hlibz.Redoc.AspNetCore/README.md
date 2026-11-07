@@ -494,15 +494,22 @@ the page reloads; **Reset to example** puts the generated body back.
   parameter's declared `style`, whatever the box looks like: `form`, `spaceDelimited`,
   `pipeDelimited` and `deepObject` (`filter[color]=red`) in the query, `simple`, `label` and
   `matrix` in the path. When an operation can answer in more than one media type, an **Accept**
-  drop-down picks which.
+  drop-down picks which. A value the schema rules out — too long, out of range, not one of an
+  `enum`, not matching a `pattern`, not a UUID — gets a warning under its field as you type, but
+  is still sent: trying a bad value is half of what a console is for.
+- **Extra headers**: **Add header** sends any header the spec doesn't list — `If-None-Match`, a
+  correlation id, a tenant or version header. They go last, so one can override a header the panel
+  set itself. A browser won't send a few, such as `Cookie` and `Host`, whatever the panel says.
+- **Deprecated operations** say so at the top of their panel, and deprecated parameters next to
+  their name. They still send.
 - **The response**: status, time and size, and what the operation documents that status as —
   or a note that it doesn't document it at all. A request that was redirected says where to, since
   the status shown is then the other URL's — a sign-in page's `200`, say — and isn't matched
   against the operation's responses. JSON bodies fold and switch between pretty and raw;
   a binary body (an image, a PDF) is offered as a **Download** instead of being shown as text.
   **Cancel** stops a request that is taking too long.
-- **Copy as cURL**: the same request as a `curl` command line, with the credentials typed into the
-  panel. The browser's cookies aren't included, so an API using cookie auth needs them added. A
+- **Copy as cURL** and **Copy as fetch**: the same request as a `curl` command line or as a
+  `fetch()` call for a browser console or script, with the credentials typed into the panel. The browser's cookies aren't included, so an API using cookie auth needs them added. A
   file goes in by name only (`-F 'photo=@front.png'`, or `--data-binary '@manual.pdf'` for a
   whole-file body): run it where the file is.
 - **Auth**: bearer tokens, HTTP Basic, and API keys in a header or the query string. OAuth 2.0 and
@@ -547,7 +554,10 @@ the page reloads; **Reset to example** puts the generated body back.
   `multipart/form-data`, whose text fields are edited the same way and whose files — any property
   the schema declares as `format: binary`, which is how ASP.NET Core describes an `IFormFile` —
   each get a file picker. When a media type declares several named `examples`, a picker switches
-  between them. A binary body — a `format: binary` schema, or a media type like
+  between them. A body whose schema is a `oneOf`/`anyOf` — a polymorphic type, which ASP.NET Core
+  describes that way for `[JsonDerivedType]` — gets a **Variant** picker instead when the media
+  type gives no example of its own; each variant's starting body carries its discriminator first,
+  where System.Text.Json requires it. A binary body — a `format: binary` schema, or a media type like
   `application/octet-stream`, `application/pdf` or `image/*` with none — gets one file picker,
   and the file is sent as the whole body (for a wildcard type, with the file's own
   `Content-Type`). Any other media type is sent as typed, with its declared `Content-Type`.

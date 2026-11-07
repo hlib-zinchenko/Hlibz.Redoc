@@ -371,3 +371,29 @@ textarea.hlibz-tryit-code { resize: vertical; tab-size: 2; }
 @media print {
   .hlibz-tryit-open, dialog.hlibz-tryit { display: none !important; }
 }
+
+/* Warn-only checks under a parameter, and the deprecation note and tag. */
+.hlibz-tryit-check {
+  color: var(--color-warning-base, #d97706);
+  font-size: 0.85em;
+}
+.hlibz-tryit-deprecated-tag {
+  color: var(--color-warning-base, #d97706);
+  font-size: 0.85em;
+}
+.hlibz-tryit-deprecated { margin: 0 0 12px; }
+
+/* Extra headers: name, value and a remove button per row. */
+.hlibz-tryit-header-rows { display: flex; flex-direction: column; gap: 6px; }
+.hlibz-tryit-header-rows:not(:empty) { margin-bottom: 8px; }
+.hlibz-tryit-header-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) auto;
+  gap: 6px;
+  align-items: center;
+}
+/* Two copy buttons made the action row too wide for a narrow panel: it wraps whole buttons now,
+   and no button breaks its own label over two lines. */
+.hlibz-tryit-actions { flex-wrap: wrap; }
+.hlibz-tryit-send, .hlibz-tryit-ghost { white-space: nowrap; }
+.hlibz-tryit-copy-as { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
