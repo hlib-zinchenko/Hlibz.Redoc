@@ -152,11 +152,11 @@ public class ReDocPagesTests
             [new ReDocDocument("taxes", Route: "a/b/c"), new ReDocDocument("fees")]);
 
         Assert.Contains(
-            "\"../_redoc/redoc.standalone.js\"",
+            "\"../_redoc/redoc.standalone.js?v=" + ReDocBundle.UrlVersion + "\"",
             await GetAsync(shallow, "/taxes/redoc-init.js"),
             StringComparison.Ordinal);
         Assert.Contains(
-            "\"../../../api-docs/_redoc/redoc.standalone.js\"",
+            "\"../../../api-docs/_redoc/redoc.standalone.js?v=" + ReDocBundle.UrlVersion + "\"",
             await GetAsync(deep, "/a/b/c/redoc-init.js"),
             StringComparison.Ordinal);
     }

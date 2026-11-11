@@ -2523,10 +2523,13 @@
     }, 50);
   }
 
-  fetch(new URL(config.specUrl, location.href).href, {
+  // redoc-init.js leaves ReDoc's own spec response here, so the page fetches it — and the server
+  // generates it — once. Absent when the bundle failed to load, and then this fetches it itself.
+  var handedOver = window[Symbol.for('hlibz.redoc.spec')];
+  (handedOver || fetch(new URL(config.specUrl, location.href).href, {
     credentials: 'same-origin',
     headers: { Accept: 'application/json' },
-  }).then(function (response) {
+  })).then(function (response) {
     if (!response.ok) {
       throw new Error('HTTP ' + response.status);
     }

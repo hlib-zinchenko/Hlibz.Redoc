@@ -188,7 +188,13 @@ takes one project at a time.
     `redoc-init.js` imports it by a relative href (`ReDocRelativePath`), so one cached copy serves
     every page and the URLs survive a path-rewriting proxy. `Cache-Control: immutable` for a year
     plus a strong ETag: Redoc.AspNetCore sends 1 MB uncompressed with no `Cache-Control` at all,
-    Swashbuckle sends `max-age=0`.
+    Swashbuckle sends `max-age=0`. Because it is immutable, the import href carries
+    `?v={ReDocBundle.UrlVersion}` (a prefix of the gzip hash); drop that and an upgrade reaches
+    returning viewers a year late.
+  - Everything else a page loads is a `ReDocFile`: bytes, a strong ETag per encoding, `no-cache`
+    (`private, no-cache` for a gated document, via `ReDocSitePage.CacheControl`), and brotli/gzip
+    copies made lazily on first request. Identical content is deduplicated in `ReDocSite.Build`.
+    The spec stays `no-store` but is compressed per request at the fast setting.
   - A route pattern ignores its trailing slash, so `{route}/` and `{route}` are **one endpoint**,
     not two — mapping both throws `AmbiguousMatchException`. The handler checks the path itself and
     302s when the slash is missing, because serving the page there would leave every relative href
@@ -196,7 +202,9 @@ takes one project at a time.
   - `ReDocPage.ConfigJson` writes the config with `Utf8JsonWriter`, never `JsonSerializer`: a slim
     or AOT host has reflection-based serialization off. `AdditionalConfigJson` is the escape hatch
     for ReDoc options this package doesn't surface, validated where it's set rather than on the
-    page.
+    page. Option names are ReDoc 3's, not 2.x's: `HideDownloadButton` writes `hideDownloadButtons`
+    (plural), because 3.0.1 silently ignores the singular. Check any new option name against the
+    bundle.
   - `ReDocDarkThemePresets` (internal) backs `ThemePreset` — Midnight / Nord / GitHubDark, each eleven
     `--color-warm-grey-N` values plus an accent, under `:root:root.dark`. That is a whole theme
     because of the ramp fact above, and it is **dark mode only**: all three are dark palettes.
@@ -243,7 +251,11 @@ takes one project at a time.
       **timer, not `requestAnimationFrame`**: a background tab runs no frames, and a section React
       re-rendered there sat without its button.
     - The console is a `<dialog>` of our own outside React's tree, reading the spec itself, never
-      ReDoc's state. Auth schemes and body media types go through two registries in the script
+      ReDoc's state. It doesn't fetch the spec, though: `redoc-init.js` wraps `fetch` until ReDoc
+      requests the spec, leaves a clone under `Symbol.for('hlibz.redoc.spec')` and restores it.
+      Don't swap that for passing ReDoc a pre-fetched object: 3.0.1's `init` then has no spec URL,
+      and loses its download link and every page action that names the URL. The console's own
+      fetch is only the fallback for a page whose bundle failed. Auth schemes and body media types go through two registries in the script
       (`registerAuth`, `registerBody`); adding one is an entry, not a rewrite. They are internal
       on purpose — no `window` API until they have settled.
     - Credentials are in memory by default; `CredentialStorage` (`Session`/`Local`) puts them in

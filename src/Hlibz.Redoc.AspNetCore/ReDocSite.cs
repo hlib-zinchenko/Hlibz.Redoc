@@ -58,7 +58,8 @@ internal sealed class ReDocSite
     public Task WritePage(HttpContext context, ReDocSitePage page)
     {
         LastDocument?.Remember(context, page.Name);
-        return ReDocAssets.WritePage(context, page.Html, ContentSecurityPolicy);
+        return ReDocAssets.WritePage(
+            context, page.Html, page.CacheControl, ContentSecurityPolicy);
     }
 
     /// <summary>
@@ -147,6 +148,26 @@ internal sealed class ReDocSite
         string? cssWithPicker = null;
         string? cssWithout = null;
 
+        // One encoded file per distinct content, however many pages share it — the stylesheet and
+        // the color-mode script usually are the same on every page, and each copy would otherwise
+        // be compressed and held separately.
+        Dictionary<string, ReDocFile> files = new(StringComparer.Ordinal);
+        ReDocFile FileOf(string content, string contentType)
+        {
+            if (!files.TryGetValue(content, out ReDocFile? file))
+            {
+                file = new ReDocFile(content, contentType);
+                files[content] = file;
+            }
+
+            return file;
+        }
+
+        // Versioned, because the bundle is sent immutable: an upgraded package has to be a new URL
+        // or viewers keep the old bundle for a year. The query string is ignored when matching.
+        string BundleHref(string route) =>
+            $"{ReDocRelativePath.Between(route, bundleRoute)}?v={ReDocBundle.UrlVersion}";
+
         bool withToolbarItems = options.ToolbarItems.Count > 0;
 
         // The two controls are placed independently, so each script is built for its own strip.
@@ -196,27 +217,36 @@ internal sealed class ReDocSite
             pages.Add(new ReDocSitePage(
                 page.Route,
                 page.Document.Name,
-                ReDocPage.Html(
-                    plan.DocumentTitleOf(page.Document),
-                    options,
-                    withPicker,
-                    withToolbarItems,
-                    options.TryIt is { } tryIt
-                        ? ReDocTryIt.Tag(specUrl, page.Route, tryIt)
-                        : null),
-                css,
-                ReDocPage.InitScript(
-                    ReDocRelativePath.Between(page.Route, bundleRoute),
-                    specUrl,
-                    configJson),
-                colorModeScript,
+                FileOf(
+                    ReDocPage.Html(
+                        plan.DocumentTitleOf(page.Document),
+                        options,
+                        withPicker,
+                        withToolbarItems,
+                        options.TryIt is { } tryIt
+                            ? ReDocTryIt.Tag(specUrl, page.Route, tryIt)
+                            : null),
+                    "text/html"),
+                FileOf(css, "text/css"),
+                FileOf(
+                    ReDocPage.InitScript(
+                        BundleHref(page.Route),
+                        specUrl,
+                        configJson,
+                        shareSpec: options.TryIt is not null),
+                    "text/javascript"),
+                FileOf(colorModeScript, "text/javascript"),
                 withPicker
-                    ? plan.PickerScriptFor(page, pickerSpot, options.SearchablePicker)
+                    ? FileOf(
+                        plan.PickerScriptFor(page, pickerSpot, options.SearchablePicker),
+                        "text/javascript")
                     : null,
                 // Per page rather than once for the site: a `~/` item resolves against the page's
                 // own route depth, the same way the picker's links do.
                 withToolbarItems
-                    ? ReDocPage.ToolbarScript(options.ToolbarItems, page.Route, itemsSpot)
+                    ? FileOf(
+                        ReDocPage.ToolbarScript(options.ToolbarItems, page.Route, itemsSpot),
+                        "text/javascript")
                     : null,
                 page.Document.Unlisted,
                 spec,
@@ -351,19 +381,18 @@ internal sealed class ReDocSite
             return file switch
             {
                 "" or "index.html" => WritePage(context, page),
-                ReDocPage.StyleFileName => ReDocAssets.Write(context, page.Css, "text/css"),
-                ReDocPage.InitFileName =>
-                    ReDocAssets.Write(context, page.InitScript, "text/javascript"),
+                ReDocPage.StyleFileName => page.Css.WriteAsync(context, page.CacheControl),
+                ReDocPage.InitFileName => page.InitScript.WriteAsync(context, page.CacheControl),
                 ReDocPage.ColorModeFileName =>
-                    ReDocAssets.Write(context, page.ColorModeScript, "text/javascript"),
+                    page.ColorModeScript.WriteAsync(context, page.CacheControl),
                 ReDocPage.PickerFileName when page.PickerScript is not null =>
-                    ReDocAssets.Write(context, page.PickerScript, "text/javascript"),
+                    page.PickerScript.WriteAsync(context, page.CacheControl),
                 ReDocPage.ToolbarFileName when page.ToolbarScript is not null =>
-                    ReDocAssets.Write(context, page.ToolbarScript, "text/javascript"),
+                    page.ToolbarScript.WriteAsync(context, page.CacheControl),
                 ReDocPage.SpecFileName when page.Spec is not null =>
                     ReDocAssets.WriteSpec(context, page.Spec),
                 ReDocTryIt.FileName when page.TryIt =>
-                    ReDocAssets.Write(context, ReDocTryIt.Script, "text/javascript"),
+                    ReDocTryIt.File.WriteAsync(context, page.CacheControl),
                 _ => next(context),
             };
         }
@@ -376,17 +405,24 @@ internal sealed class ReDocSite
 internal sealed record ReDocSitePage(
     string Route,
     string Name,
-    string Html,
-    string Css,
-    string InitScript,
-    string ColorModeScript,
-    string? PickerScript,
-    string? ToolbarScript,
+    ReDocFile Html,
+    ReDocFile Css,
+    ReDocFile InitScript,
+    ReDocFile ColorModeScript,
+    ReDocFile? PickerScript,
+    ReDocFile? ToolbarScript,
     bool Unlisted,
     OpenApiSpecSource? Spec,
     IReadOnlyList<string>? Policies,
     bool TryIt = false)
 {
+    /// <summary>
+    /// What this page's files are sent with: always revalidated, and kept out of shared caches
+    /// altogether when the document is gated, since the next person through a proxy isn't
+    /// necessarily someone the policy lets in.
+    /// </summary>
+    public string CacheControl => Policies is null ? "no-cache" : "private, no-cache";
+
     /// <summary>
     /// The last segment of the route, which is what the page's own folder is called — the target
     /// of the redirect from the folder without its trailing slash.

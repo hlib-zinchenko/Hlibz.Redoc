@@ -31,6 +31,14 @@ internal static class ReDocTryIt
 
     public static string Css => CssText.Value;
 
+    /// <summary>
+    /// The script as served: one encoded copy for every page, since it is the same on all of them.
+    /// </summary>
+    public static ReDocFile File => FileValue.Value;
+
+    private static readonly Lazy<ReDocFile> FileValue =
+        new(() => new ReDocFile(Script, "text/javascript"));
+
     /// <summary>The script tag a page carries when the console is on.</summary>
     /// <param name="specUrl">The spec URL the page hands ReDoc, as written in the init script.</param>
     /// <param name="route">The page's own route, which the app base is worked out from.</param>

@@ -41,7 +41,8 @@ public class ReDocDocumentsOptionsTests
 
         string json = ReDocPage.ConfigJson(options);
 
-        Assert.Contains("\"hideDownloadButton\":true", json, StringComparison.Ordinal);
+        // ReDoc 3's spelling: 3.0.1 ignores 2.x's singular `hideDownloadButton`.
+        Assert.Contains("\"hideDownloadButtons\":true", json, StringComparison.Ordinal);
         Assert.Contains("\"showExtensions\":true", json, StringComparison.Ordinal);
     }
 

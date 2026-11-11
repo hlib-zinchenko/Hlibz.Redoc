@@ -3,7 +3,6 @@ using System.Reflection;
 using System.Security.Cryptography;
 
 using Microsoft.AspNetCore.Http;
-using Microsoft.Net.Http.Headers;
 
 namespace Hlibz.Redoc.Extensions;
 
@@ -49,59 +48,25 @@ internal static class ReDocBundle
     public static ReDocBundleContent Identity => LazyIdentity.Value;
 
     /// <summary>
+    /// What the bundle's URL carries so that a new bundle is a new URL: it is sent
+    /// <c>immutable</c> for a year, and without this a viewer who had the old one would keep it
+    /// for that long after an upgrade. A hash of the stored bytes rather than
+    /// <see cref="Version"/>, so even a bundle replaced without its version changing gets a URL
+    /// of its own.
+    /// </summary>
+    public static string UrlVersion { get; } = Gzip.ETag.Trim('"')[..12];
+
+    /// <summary>
     /// The stored encoding to answer a request with: brotli where it is accepted, then gzip, then
     /// the decompressed bytes.
     /// </summary>
-    /// <remarks>
-    /// Brotli first because it is 20% smaller here and every browser that speaks it also speaks
-    /// gzip, so preferring it costs nothing. The header is parsed rather than searched for a
-    /// substring: <c>br;q=0</c> contains "br" while meaning the opposite, and a client that sends
-    /// only one of the two must not be handed the other.
-    /// </remarks>
-    public static ReDocBundleContent Negotiate(HttpRequest request)
-    {
-        if (!StringWithQualityHeaderValue.TryParseList(
-                request.Headers.AcceptEncoding, out IList<StringWithQualityHeaderValue>? accepted)
-            || accepted.Count == 0)
+    public static ReDocBundleContent Negotiate(HttpRequest request) =>
+        ReDocContentEncoding.Negotiate(request) switch
         {
-            return Identity;
-        }
-
-        double brotli = QualityOf(accepted, "br");
-        double gzip = QualityOf(accepted, "gzip");
-
-        // A tie goes to brotli, which is the smaller of the two.
-        if (brotli > 0 && brotli >= gzip)
-        {
-            return Brotli;
-        }
-
-        return gzip > 0 ? Gzip : Identity;
-    }
-
-    /// <summary>
-    /// How much the client wants one encoding: its own quality, else the one it gave <c>*</c>,
-    /// else zero. Quality 0 means "not acceptable", so it is reported as such.
-    /// </summary>
-    private static double QualityOf(
-        IEnumerable<StringWithQualityHeaderValue> accepted, string encoding)
-    {
-        double wildcard = 0;
-        foreach (StringWithQualityHeaderValue candidate in accepted)
-        {
-            if (candidate.Value.Equals(encoding, StringComparison.OrdinalIgnoreCase))
-            {
-                return candidate.Quality ?? 1;
-            }
-
-            if (candidate.Value.Equals("*", StringComparison.Ordinal))
-            {
-                wildcard = candidate.Quality ?? 1;
-            }
-        }
-
-        return wildcard;
-    }
+            ReDocContentCoding.Brotli => Brotli,
+            ReDocContentCoding.Gzip => Gzip,
+            _ => Identity,
+        };
 
     private static ReDocBundleContent Decompress()
     {
