@@ -163,6 +163,28 @@ public class ReDocFileServingTests
     }
 
     [Fact]
+    public async Task Page_PreloadsExactlyWhatTheInitScriptRequests()
+    {
+        await using ReDocTestApp app = await ReDocTestApp.StartAsync();
+
+        string html = await app.GetStringAsync("/api-docs/taxes/");
+        string init = await app.GetStringAsync("/api-docs/taxes/redoc-init.js");
+        int start = init.IndexOf('"', StringComparison.Ordinal);
+        string bundleHref = init[(start + 1)..init.IndexOf('"', start + 1)];
+
+        // A preload is only used when the later request matches it: the same URL, and for the
+        // spec the same mode and credentials as ReDoc's plain fetch(url). Anything else is a second
+        // request — for a served spec, a second generation.
+        Assert.Contains(
+            $"<link rel=\"modulepreload\" href=\"{bundleHref}\">", html, StringComparison.Ordinal);
+        Assert.Contains(
+            "<link rel=\"preload\" href=\"/openapi/taxes.json\" as=\"fetch\" crossorigin>",
+            html,
+            StringComparison.Ordinal);
+        Assert.Contains("init(\n  \"/openapi/taxes.json\"", init, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task InitScript_HandsTheSpecToTheConsole_OnlyWhenThereIsOne()
     {
         await using ReDocTestApp plain = await ReDocTestApp.StartAsync();

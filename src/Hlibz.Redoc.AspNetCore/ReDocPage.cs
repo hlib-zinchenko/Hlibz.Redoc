@@ -39,11 +39,20 @@ internal static class ReDocPage
     /// <summary>The <c>localStorage</c> key ReDoc 3 keeps the viewer's color mode under.</summary>
     private const string ColorModeKey = "redoc.colorMode";
 
+    /// <param name="title">The page title, already HTML-encoded.</param>
+    /// <param name="options">The site's options.</param>
+    /// <param name="withPicker">Whether the page carries the picker script.</param>
+    /// <param name="withToolbarItems">Whether the page carries the toolbar links script.</param>
+    /// <param name="bundleHref">The bundle's href as <c>redoc-init.js</c> imports it.</param>
+    /// <param name="specUrl">The spec URL as <c>redoc-init.js</c> hands it to ReDoc.</param>
+    /// <param name="tryItTag">The try-it console's script tag, when it is on.</param>
     public static string Html(
         string title,
         ReDocDocumentsOptions options,
         bool withPicker,
         bool withToolbarItems,
+        string bundleHref,
+        string specUrl,
         string? tryItTag = null)
     {
         string? mode = options.DefaultColorMode switch
@@ -76,6 +85,17 @@ internal static class ReDocPage
         }
 
         page.Append($"<link rel=\"stylesheet\" href=\"{StyleFileName}\">\n");
+
+        // Without these the load is a chain: the bundle is only found once redoc-init.js has
+        // arrived, and the spec only requested once the bundle has run. Both hrefs must be exactly
+        // what is later requested — the same URL, and for the spec the same mode and credentials
+        // as ReDoc's plain fetch(url), which is what `crossorigin` (anonymous) gives — or the
+        // browser fetches again and the preload is wasted.
+        page.Append(
+            $"<link rel=\"modulepreload\" href=\"{WebUtility.HtmlEncode(bundleHref)}\">\n");
+        page.Append(
+            $"<link rel=\"preload\" href=\"{WebUtility.HtmlEncode(specUrl)}\" as=\"fetch\" "
+            + "crossorigin>\n");
 
         // Before anything paints, and before the bundle: blocking on purpose.
         page.Append($"<script src=\"{ColorModeFileName}\"></script>\n");

@@ -190,7 +190,9 @@ takes one project at a time.
     plus a strong ETag: Redoc.AspNetCore sends 1 MB uncompressed with no `Cache-Control` at all,
     Swashbuckle sends `max-age=0`. Because it is immutable, the import href carries
     `?v={ReDocBundle.UrlVersion}` (a prefix of the gzip hash); drop that and an upgrade reaches
-    returning viewers a year late.
+    returning viewers a year late. The page preloads both that href (`modulepreload`) and the spec
+    (`preload as="fetch" crossorigin`), and each must stay byte-identical to what `redoc-init.js`
+    requests, or the browser fetches again and a served spec is generated twice.
   - Everything else a page loads is a `ReDocFile`: bytes, a strong ETag per encoding, `no-cache`
     (`private, no-cache` for a gated document, via `ReDocSitePage.CacheControl`), and brotli/gzip
     copies made lazily on first request. Identical content is deduplicated in `ReDocSite.Build`.

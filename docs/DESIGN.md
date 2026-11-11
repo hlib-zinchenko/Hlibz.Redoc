@@ -237,6 +237,14 @@ proxy. The href carries `?v=` and the first twelve hex digits of the gzip copy's
 sent `immutable` for a year, so without a new URL an upgrade would reach a returning viewer a year
 late. Matching ignores the query, so an old page still gets the current bundle.
 
+The page carries `<link rel="modulepreload">` for the bundle and `<link rel="preload" as="fetch"
+crossorigin>` for the spec. Without them the load was a chain: the bundle found only once
+`redoc-init.js` arrived, the spec requested only once the bundle had run (58 ms into the load on
+localhost, against 6 ms with the preload). Both hrefs must match the later request exactly, the
+same URL and, for the spec, the same mode and credentials as ReDoc's bare `fetch(url)`. Otherwise
+the preload is wasted and a served spec is generated twice. Chrome was checked to take the
+preloaded spec despite `no-store`: one request, initiated by the `<link>`.
+
 Everything else a page loads is a `ReDocFile`, built at startup: a strong ETag per encoding and
 `no-cache`, since these files change with configuration under the same URL. Files of a gated
 document are `private, no-cache`. Brotli and gzip copies are made at the smallest setting on the
