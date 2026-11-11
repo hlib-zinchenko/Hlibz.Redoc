@@ -15,7 +15,7 @@ if the change is large, so we can agree on the shape before you write it.
 dotnet build
 ```
 
-Five test suites, each run on its own — test projects use Microsoft Testing Platform, so
+Six test suites, each run on its own — test projects use Microsoft Testing Platform, so
 `dotnet test` needs `--project` rather than a bare directory:
 
 ```bash
@@ -24,6 +24,7 @@ dotnet test --project tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests     # c
 dotnet test --project tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests         # conformance, host 2
 dotnet test --project tests/Hlibz.Redoc.AspNetCore.Tests                     # the ReDoc 3 host
 dotnet test --project tests/Hlibz.Redoc.AspNetCore.BrowserTests              # try-it, in Chrome
+dotnet test --project tests/Hlibz.Redoc.Extensions.BrowserTests              # dark theme, both hosts
 ```
 
 `tests/Conformance/` is **one** set of assertions, compiled once per adapter rather than being a

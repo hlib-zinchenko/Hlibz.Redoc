@@ -64,7 +64,7 @@ Both adapters behave identically; the package reference differs, the code doesn'
 |---|---|---|
 | How the page is served | this package serves it | the host serves it; this package adds to it |
 | ReDoc version | 3.0.1, embedded here | whatever the host embeds: 2.5.4 (Swashbuckle) or 2.0.0 (Redoc.AspNetCore) |
-| Dark mode | ReDoc 3's own, plus three named dark palettes | this package's dark theme, with a Light/System/Dark switcher |
+| Dark mode | ReDoc 3's own, plus three named dark palettes and two light ones | this package's dark theme, with a Light/System/Dark switcher |
 | Multiple documents + picker | yes, with groups, search and placement | yes, with groups |
 | Authorization per document | `.RequireAuthorization()` on a document covers its page, its spec and its link | not possible: the host's page is middleware, which carries no metadata |
 | Bundle on the wire | 507 KB brotli / 634 KB gzip, pre-compressed | 1 MB uncompressed (Redoc.AspNetCore) |

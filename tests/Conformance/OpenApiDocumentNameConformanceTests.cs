@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi;
 using Xunit;
@@ -68,6 +69,36 @@ public class OpenApiDocumentNameConformanceTests
 
         Assert.Contains("'v2'", error.Message);
         Assert.Contains("Registered documents: 'v1'.", error.Message);
+    }
+
+    [Fact]
+    public async Task SwashbuckleSpecUrlTemplate_IsWhereUseSwaggerServesTheDocument()
+    {
+        // Against Swashbuckle itself, so the constant can't drift from its real default.
+        await using WebApplication app = CreateApp(services =>
+        {
+            services.AddEndpointsApiExplorer();
+            services.AddSwaggerGen(swagger => swagger.SwaggerDoc("v1", new OpenApiInfo()));
+        });
+        app.UseSwagger();
+        app.UseReDocDocuments(
+            [new ReDocDocument("v1")],
+            docs => docs.SpecUrlTemplate = ReDocDocumentsOptions.SwashbuckleSpecUrlTemplate);
+
+        DefaultHttpContext context = new() { RequestServices = app.Services };
+        context.Request.Method = HttpMethods.Get;
+        context.Request.Path = ReDocDocumentsOptions.SwashbuckleSpecUrlTemplate
+            .Replace("{documentName}", "v1", StringComparison.Ordinal);
+        context.Response.Body = new MemoryStream();
+        await ((IApplicationBuilder)app).Build()(context);
+
+        Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
+        context.Response.Body.Position = 0;
+        using StreamReader reader = new(context.Response.Body);
+        Assert.Contains(
+            "\"openapi\"",
+            await reader.ReadToEndAsync(TestContext.Current.CancellationToken),
+            StringComparison.Ordinal);
     }
 
     [Fact]

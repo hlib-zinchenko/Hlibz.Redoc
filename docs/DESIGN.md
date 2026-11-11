@@ -169,7 +169,15 @@ Three decisions worth keeping: the provider is resolved per request (an implemen
 scoped) while *which* provider is settled at startup; the document is buffered rather than streamed,
 so a generator that throws half-way produces a 500 rather than a 200 carrying half a document; and
 the spec is sent `no-store`, alone among the things this package serves, because a shared cache
-holding a gated document would hand it on. It is still compressed, per request at the fast
+holding a gated document would hand it on.
+
+`SpecCacheDuration` is the opt-in exception, and it is deliberately narrow. It memoizes in the
+server and revalidates by ETag with `private, no-cache`, never a lifetime and never a shared
+cache, so what a browser holds is always checked against the server's current copy. It skips any
+gated document, including one gated through `ForDocument(...)`, which the site only learns about
+from the endpoint's `IAuthorizeData` at request time: who is asking may change such a document,
+and a memo would hand one viewer's copy to the next. Off by default for the same reason, since a
+document transformer that reads the request is invisible from here. It is still compressed, per request at the fast
 setting: after the bundle it is usually the largest thing a page fetches, and JSON shrinks by about
 nine-tenths (45 KB to 6 KB for the sample's widget catalog).
 

@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The adapters' dark theme as a browser renders it, on both hosts at once. Its own project
+       because it needs a browser, like the try-it console's: the adapter suites stay runnable
+       anywhere. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Microsoft.Playwright" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="xunit.runner.visualstudio">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <!-- Both adapters in one process, which is the point: the same probe, run against each host's
+       page, must come back identical. They declare the same public type names, so each gets an
+       extern alias and is only ever named through it — see RedocAspNetCoreSite.cs and
+       SwashbuckleSite.cs. Core, which both reference, stays global. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Hlibz.Redoc.Extensions.RedocAspNetCore\Hlibz.Redoc.Extensions.RedocAspNetCore.csproj" Aliases="redocaspnetcore" />
+    <ProjectReference Include="..\..\src\Hlibz.Redoc.Extensions.Swashbuckle\Hlibz.Redoc.Extensions.Swashbuckle.csproj" Aliases="swashbuckle" />
+    <ProjectReference Include="..\..\samples\Sample.Shared\Sample.Shared.csproj" />
+  </ItemGroup>
+
+</Project>

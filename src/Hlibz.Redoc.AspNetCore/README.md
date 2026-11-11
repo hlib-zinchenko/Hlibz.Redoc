@@ -58,9 +58,9 @@ The page just needs a spec URL, so `AddOpenApi()`, `AddSwaggerGen()` and NSwag a
 `SpecUrlTemplate` at wherever your generator serves documents:
 
 ```csharp
-// Swashbuckle's UseSwagger
+// Swashbuckle's UseSwagger: "/swagger/{documentName}/swagger.json"
 app.MapReDocDocuments(documents, docs =>
-    docs.SpecUrlTemplate = "/swagger/{documentName}/swagger.json");
+    docs.SpecUrlTemplate = ReDocDocumentsOptions.SwashbuckleSpecUrlTemplate);
 ```
 
 The two features that read documents rather than link to them — the startup name check, and pages
@@ -444,7 +444,8 @@ Points worth knowing:
 - The spec URL on the page is relative, like every other href here, so it survives a path-rewriting
   proxy. ReDoc's own "Download OpenAPI description" button follows it, so that is gated too.
 - It is generated per request, like `MapOpenApi`'s, and sent `Cache-Control: no-store` so a shared
-  cache can't hand a gated document to the next caller. It is compressed per request (brotli or
+  cache can't hand a gated document to the next caller — unless you opt into
+  [caching](#caching-served-specs) for the documents nobody needs to sign in for. It is compressed per request (brotli or
   gzip, at the fast setting) when the client accepts it. With the try-it console on, the console
   reuses ReDoc's own response, so a page view generates the spec once.
 - `servers` comes from the addresses the server is listening on, not from the request — behind a
@@ -454,6 +455,30 @@ Points worth knowing:
   the two can't both decide where a page reads its spec. For a *gated* document both throw instead:
   a locked page in front of a spec this package doesn't serve is the outcome the feature exists to
   rule out.
+
+### Caching served specs
+
+Generating a large document on every page view adds up. When a document is the same for everyone,
+let the pages reuse it:
+
+```csharp
+docs.ServeSpecs = true;
+docs.SpecCacheDuration = TimeSpan.FromMinutes(5);
+```
+
+Each served spec is then generated at most once per five minutes. In between, it is sent from
+memory with an ETag and `Cache-Control: private, no-cache`, so a returning browser gets a `304`
+rather than the document again. Requests that arrive while it is being generated wait for that one
+generation rather than starting their own.
+
+- **Documents behind authorization are never cached**, whether gated with `RequireAuthorization` on
+  the document or with `ForDocument(...).RequireAuthorization()`. Who is asking may change what such
+  a document contains, so it stays generated per request and `no-store`.
+- **Only for documents that don't vary per request.** A document transformer that reads the request
+  or the signed-in user would hand one viewer's document to the next. The default, no caching, is
+  the safe one for those.
+- Off by default. Set without any page serving its own spec, it throws at startup rather than doing
+  nothing.
 
 ### What gating does to the picker
 
@@ -595,11 +620,48 @@ no `'unsafe-inline'` in `script-src`. It hooks into ReDoc 3.0.1's markup, which 
 API. If a future bundle changes that markup, the buttons stop appearing; nothing else on the page
 breaks.
 
+## Scalar beside ReDoc
+
+[Scalar](https://github.com/scalar/scalar) is another MIT-licensed renderer for the same documents,
+with a request console of its own and code samples in a dozen languages. Mounting it next to the
+ReDoc pages and linking it from the picker gives viewers both:
+
+```csharp
+// dotnet add package Scalar.AspNetCore
+using Scalar.AspNetCore;
+
+app.MapReDocDocuments(documents, docs =>
+{
+    docs.ServeSpecs = true;
+    docs.Links.Add(new ReDocLink("Open in Scalar", "~/scalar/"));
+});
+
+// Read the specs the ReDoc pages serve rather than MapOpenApi()'s, so nothing else is mapped.
+app.MapScalarApiReference(scalar => scalar
+    .WithOpenApiRoutePattern("/api-docs/{documentName}/openapi.json")
+    .AddDocuments("widgets", "manufacturers"));
+```
+
+`/scalar/` lists every document it was given, and `/scalar/{documentName}` opens one. Keep the route
+pattern in step with `RoutePrefix` and any `Route` you gave a document. With `MapOpenApi()` mapped
+instead, drop `WithOpenApiRoutePattern` and leave `ServeSpecs` off: Scalar reads
+`/openapi/{documentName}.json` by default.
+
+Two things to know when some documents are gated:
+
+- **Give Scalar only the public documents.** Its sidebar names every document it was handed, before
+  any spec is fetched. A gated document's spec still answers only to the signed-in, wherever the
+  request comes from, but the name is shown regardless.
+- **Or gate Scalar as a whole.** `MapScalarApiReference` returns an endpoint convention builder, so
+  `.RequireAuthorization("Employees")` puts the whole console behind the same policy.
+
+Checked against Scalar.AspNetCore 2.18.7.
+
 ## Theming
 
 ReDoc 3 themes itself through CSS custom properties — there is no `theme` config object any more —
 and ships light and dark modes plus a system font stack. So there is no `UseDarkTheme` here: what
-this package adds is the first-time default, an accent, named dark palettes and a place to put your
+this package adds is the first-time default, an accent, named dark and light palettes and a place to put your
 own CSS.
 
 ### Color mode
@@ -634,9 +696,9 @@ declaration or open a new rule throws there rather than serving a page with a br
 It is not a color parser, though — a value CSS doesn't understand is ignored by the browser, like
 any other typo in CSS.
 
-### Named dark palettes
+### Named palettes
 
-For when you want a different dark mode rather than a different accent:
+For when you want a different dark mode, or light mode, rather than a different accent:
 
 ```csharp
 docs.DarkThemePreset = ReDocDarkThemePreset.Nord;   // or Midnight, or GitHubDark
@@ -652,9 +714,27 @@ Each is eleven greys and an accent, and that is a whole theme rather than a tint
 mode is its grey ramp reversed, so the page background, the panels, both border weights, primary and
 secondary text and the code blocks all follow those eleven values.
 
-A preset paints **dark mode only** — all three are dark palettes — so set
-`DefaultColorMode = ReDocColorMode.Dark` if a first-time viewer on a light OS should see it too.
-Setting `PrimaryColor` or `DarkModePrimaryColor` takes the accent over from the preset.
+A dark preset paints **dark mode only**, so set `DefaultColorMode = ReDocColorMode.Dark` if a
+first-time viewer on a light OS should see it too. Setting `PrimaryColor` or
+`DarkModePrimaryColor` takes the accent over from the preset.
+
+Light mode has its own setting, for the palettes that publish a light variant of their own:
+
+```csharp
+docs.LightThemePreset = ReDocLightThemePreset.Nord;   // or GitHubLight
+docs.DarkThemePreset = ReDocDarkThemePreset.Nord;     // the same palette in both modes
+```
+
+| | |
+|---|---|
+| `Nord` | Nord's bright ambiance: Snow Storm surfaces, Polar Night text, Nord's blue accent. |
+| `GitHubLight` | GitHub's light theme: white canvas, its grey scale for panels, borders and text, its blue accent. |
+
+A light preset sets the page background as well as the eleven greys, because in light mode ReDoc
+paints the page from `--color-white` rather than from the ramp. The two settings are independent,
+so either can be used alone. There is no light `Midnight`: it is this project's own dark palette,
+and a light one invented to match would be nobody's theme. Only `PrimaryColor` takes over a light
+preset's accent, since `DarkModePrimaryColor` says nothing about light mode.
 
 ### Your own CSS
 
@@ -772,13 +852,15 @@ Two things worth knowing:
 |---|---|
 | `RoutePrefix` | Where pages go by default. Defaults to `"api-docs"`. |
 | `RedirectToFirstDocument` | Redirect `/{RoutePrefix}` to the first document. Defaults to `true`. |
-| `SpecUrlTemplate` | Where pages read specs. Defaults to `"/openapi/{documentName}.json"`. |
+| `SpecUrlTemplate` | Where pages read specs. Defaults to `"/openapi/{documentName}.json"`; `ReDocDocumentsOptions.SwashbuckleSpecUrlTemplate` is Swashbuckle's `UseSwagger` default. |
 | `ServeSpecs` | Each page serves its own document at `openapi.json` beside it instead. Not needed to gate a document — that implies it. Defaults to `false`. |
+| `SpecCacheDuration` | Reuse each served spec for this long, with an ETag. Never applies to a gated document. Defaults to `null`, generated per request. |
 | `ValidateDocumentNames` | Check at startup that every name is a registered document. Defaults to `true`. |
 | `DefaultColorMode` | What a first-time viewer sees: `System` (default), `Light` or `Dark`. |
 | `PrimaryColor` | The accent, as any CSS color. |
 | `DarkModePrimaryColor` | The accent while `html.dark` is in effect. Defaults to `PrimaryColor`. |
 | `DarkThemePreset` | A named dark palette: `None` (default), `Midnight`, `Nord` or `GitHubDark`. |
+| `LightThemePreset` | A named light palette: `None` (default), `Nord` or `GitHubLight`. |
 | `AdditionalCss` | Appended to the page's stylesheet, after the accent and the preset. |
 | `Favicon` | `href` for the page's `<link rel="icon">`. Unset, browsers ask for `/favicon.ico`. |
 | `SearchablePicker` | Make the picker a searchable list. Defaults to `false`. |

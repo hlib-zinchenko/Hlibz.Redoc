@@ -195,10 +195,10 @@ public class ReDocDocumentsOptionsTests
             withPicker: false);
         string beforePrint = css[..css.IndexOf("@media print", StringComparison.Ordinal)];
 
-        // All three presets are dark palettes; a light counterpart invented here would be neither
-        // the preset's nor ReDoc's.
+        // All three are dark palettes; light mode is LightThemePreset's to set.
         Assert.Contains(":root:root.dark {", beforePrint, StringComparison.Ordinal);
         Assert.DoesNotContain("\n:root:root {", beforePrint, StringComparison.Ordinal);
+        Assert.DoesNotContain(":not(.dark)", beforePrint, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -245,6 +245,77 @@ public class ReDocDocumentsOptionsTests
         // dark accent.fg on white paper is the same problem the ramp restore exists to fix.
         Assert.Contains("--link-color-primary: #0969da;", print, StringComparison.Ordinal);
         Assert.DoesNotContain("#2f81f7", print, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(ReDocLightThemePreset.Nord, "#eceff4", "#e5e9f0", "#2e3440", "#5e81ac")]
+    [InlineData(ReDocLightThemePreset.GitHubLight, "#ffffff", "#f6f8fa", "#1f2328", "#0969da")]
+    public void LightThemePreset_RepointsThePageTheLightRampAndTheAccent(
+        ReDocLightThemePreset preset, string page, string panels, string text, string accent)
+    {
+        string css = ReDocPage.Css(
+            new ReDocDocumentsOptions { LightThemePreset = preset }, withPicker: false);
+        string rule = css[css.IndexOf(":root:root:not(.dark) {", StringComparison.Ordinal)..];
+        rule = rule[..rule.IndexOf('}')];
+
+        // Light mode paints the page from --color-white rather than a ramp slot, and runs the
+        // ramp lightest-first: slot 1 the panels, slot 11 the primary text.
+        Assert.Contains($"--color-white: {page};", rule, StringComparison.Ordinal);
+        Assert.Contains($"--color-warm-grey-1: {panels};", rule, StringComparison.Ordinal);
+        Assert.Contains($"--color-warm-grey-11: {text};", rule, StringComparison.Ordinal);
+        Assert.Contains($"--color-primary-base: {accent};", rule, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LightThemePreset_AppliesToLightModeOnly_AndSitsBesideADarkOne()
+    {
+        string css = ReDocPage.Css(
+            new ReDocDocumentsOptions
+            {
+                LightThemePreset = ReDocLightThemePreset.Nord,
+                DarkThemePreset = ReDocDarkThemePreset.Nord,
+            },
+            withPicker: false);
+
+        // Dark mode redefines --color-white as black, so the light page color must not reach it.
+        Assert.Contains(":root:root:not(.dark) {", css, StringComparison.Ordinal);
+        Assert.Contains(":root:root.dark {", css, StringComparison.Ordinal);
+        Assert.Contains("--color-warm-grey-2: #2e3440;", css, StringComparison.Ordinal);
+        Assert.Contains("--color-warm-grey-2: #dde3ec;", css, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LightThemePreset_None_WritesNothing()
+    {
+        string css = ReDocPage.Css(new ReDocDocumentsOptions(), withPicker: false);
+
+        Assert.DoesNotContain(":not(.dark)", css, StringComparison.Ordinal);
+        Assert.DoesNotContain("--color-white", css, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LightThemePreset_GivesUpItsAccentOnlyToPrimaryColor()
+    {
+        string withPrimary = ReDocPage.Css(
+            new ReDocDocumentsOptions
+            {
+                LightThemePreset = ReDocLightThemePreset.GitHubLight,
+                PrimaryColor = "#c026d3",
+            },
+            withPicker: false);
+        string withDarkOnly = ReDocPage.Css(
+            new ReDocDocumentsOptions
+            {
+                LightThemePreset = ReDocLightThemePreset.GitHubLight,
+                DarkModePrimaryColor = "#c026d3",
+            },
+            withPicker: false);
+
+        // :root:root:not(.dark) outweighs PrimaryColor's :root:root, so the preset steps aside
+        // for it. DarkModePrimaryColor says nothing about light mode, so the preset keeps its own.
+        Assert.Contains("--color-white: #ffffff;", withPrimary, StringComparison.Ordinal);
+        Assert.DoesNotContain("#0969da", withPrimary, StringComparison.Ordinal);
+        Assert.Contains("--color-primary-base: #0969da;", withDarkOnly, StringComparison.Ordinal);
     }
 
     [Fact]

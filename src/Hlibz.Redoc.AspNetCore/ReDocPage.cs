@@ -394,6 +394,15 @@ internal static class ReDocPage
             css.Append(preset);
         }
 
+        // Light mode's counterpart, whose accent only PrimaryColor replaces: DarkModePrimaryColor
+        // says nothing about light mode.
+        if (ReDocLightThemePresets.Css(
+                options.LightThemePreset, withAccent: options.PrimaryColor is null)
+            is { } lightPreset)
+        {
+            css.Append(lightPreset);
+        }
+
         AppendBrandCss(css, options);
         if (options.PrintStyles)
         {

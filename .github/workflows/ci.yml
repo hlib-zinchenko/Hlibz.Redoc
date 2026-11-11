@@ -47,6 +47,11 @@ jobs:
       - name: Test the try-it console in a browser
         run: dotnet test --project tests/Hlibz.Redoc.AspNetCore.BrowserTests --no-build --configuration Release
 
+      # The adapters' dark theme as both hosts render it: the computed colors of everything the
+      # theme overrides, and the two hosts' pages compared with each other.
+      - name: Test the adapters' dark theme in a browser
+        run: dotnet test --project tests/Hlibz.Redoc.Extensions.BrowserTests --no-build --configuration Release
+
       - name: Pack
         run: |
           dotnet pack src/Hlibz.Redoc.Extensions.Core --no-build --configuration Release --output ./artifacts
