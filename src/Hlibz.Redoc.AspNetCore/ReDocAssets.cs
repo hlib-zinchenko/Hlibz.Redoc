@@ -12,8 +12,10 @@ namespace Hlibz.Redoc.Extensions;
 /// The bundle never changes for a given version of this package, so it is sent <c>immutable</c>
 /// with a year's lifetime and a strong ETag — the existing ReDoc hosts send it either with no
 /// <c>Cache-Control</c> at all or with <c>max-age=0</c>, which costs a revalidation on every page
-/// view. The pages and their small scripts carry an ETag and revalidate, because they change
-/// whenever the app's configuration does.
+/// view. Its URL carries the bundle's hash, so an upgrade is a new URL rather than a year of the
+/// old one. The pages and their small scripts are <see cref="ReDocFile"/>s: an ETag and
+/// <c>no-cache</c>, because they change whenever the app's configuration does, under the same
+/// URL.
 /// </remarks>
 internal static class ReDocAssets
 {
@@ -28,7 +30,8 @@ internal static class ReDocAssets
     /// header is left as it is — one the app set covers more than these pages and is the one that
     /// should hold.
     /// </remarks>
-    public static Task WritePage(HttpContext context, string html, string? policy)
+    public static Task WritePage(
+        HttpContext context, ReDocFile html, string cacheControl, string? policy)
     {
         if (policy is not null
             && !context.Response.Headers.ContainsKey(HeaderNames.ContentSecurityPolicy))
@@ -36,7 +39,7 @@ internal static class ReDocAssets
             context.Response.Headers.ContentSecurityPolicy = policy;
         }
 
-        return Write(context, html, "text/html");
+        return html.WriteAsync(context, cacheControl);
     }
 
     /// <summary>
@@ -46,22 +49,33 @@ internal static class ReDocAssets
     /// <c>no-store</c>, unlike everything else here: this is the one response whose point is often
     /// that not everyone may have it, and a shared cache holding a gated document would hand it to
     /// the next caller. It also can't carry an ETag — the document is generated per request, as
-    /// <c>MapOpenApi</c>'s is, so there is nothing stable to tag it with.
+    /// <c>MapOpenApi</c>'s is, so there is nothing stable to tag it with. It is compressed per
+    /// request, at the fast setting, since a spec is usually the largest thing a page fetches
+    /// after the bundle and JSON shrinks by around nine-tenths.
     /// </remarks>
     public static async Task WriteSpec(HttpContext context, OpenApiSpecSource spec)
     {
         string json = await spec.GenerateAsync(context.RequestServices);
-        context.Response.Headers.CacheControl = "no-store";
-        await Write(context, json, "application/json");
-    }
+        byte[] body = Encoding.UTF8.GetBytes(json);
 
-    /// <summary>Serves one of the small generated files: the page, its CSS or its scripts.</summary>
-    public static Task Write(HttpContext context, string content, string contentType)
-    {
-        byte[] bytes = Encoding.UTF8.GetBytes(content);
-        context.Response.ContentType = $"{contentType}; charset=utf-8";
-        context.Response.ContentLength = bytes.Length;
-        return context.Response.Body.WriteAsync(bytes).AsTask();
+        HttpResponse response = context.Response;
+        response.Headers.CacheControl = "no-store";
+        response.ContentType = "application/json; charset=utf-8";
+
+        if (body.Length >= ReDocFile.CompressionThreshold)
+        {
+            response.Headers.Vary = HeaderNames.AcceptEncoding;
+            ReDocContentCoding coding = ReDocContentEncoding.Negotiate(context.Request);
+            if (coding != ReDocContentCoding.Identity
+                && ReDocContentEncoding.Compress(body, coding, smallest: false) is { } compressed)
+            {
+                response.Headers.ContentEncoding = ReDocContentEncoding.HeaderValue(coding);
+                body = compressed;
+            }
+        }
+
+        response.ContentLength = body.Length;
+        await response.Body.WriteAsync(body);
     }
 
     /// <summary>
@@ -78,14 +92,10 @@ internal static class ReDocAssets
         response.Headers.CacheControl = ImmutableCacheControl;
         response.Headers.Vary = HeaderNames.AcceptEncoding;
 
-        foreach (string? candidate in context.Request.Headers.IfNoneMatch)
+        if (HoldsCurrent(context.Request, content.ETag))
         {
-            if (candidate is not null
-                && candidate.Contains(content.ETag, StringComparison.Ordinal))
-            {
-                response.StatusCode = StatusCodes.Status304NotModified;
-                return;
-            }
+            response.StatusCode = StatusCodes.Status304NotModified;
+            return;
         }
 
         response.ContentType = "text/javascript; charset=utf-8";
@@ -96,5 +106,22 @@ internal static class ReDocAssets
 
         response.ContentLength = content.Bytes.Length;
         await response.Body.WriteAsync(content.Bytes);
+    }
+
+    /// <summary>
+    /// Whether the request's <c>If-None-Match</c> names <paramref name="etag"/>, so a
+    /// <c>304</c> will do.
+    /// </summary>
+    internal static bool HoldsCurrent(HttpRequest request, string etag)
+    {
+        foreach (string? candidate in request.Headers.IfNoneMatch)
+        {
+            if (candidate is not null && candidate.Contains(etag, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

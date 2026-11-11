@@ -444,7 +444,9 @@ Points worth knowing:
 - The spec URL on the page is relative, like every other href here, so it survives a path-rewriting
   proxy. ReDoc's own "Download OpenAPI description" button follows it, so that is gated too.
 - It is generated per request, like `MapOpenApi`'s, and sent `Cache-Control: no-store` so a shared
-  cache can't hand a gated document to the next caller.
+  cache can't hand a gated document to the next caller. It is compressed per request (brotli or
+  gzip, at the fast setting) when the client accepts it. With the try-it console on, the console
+  reuses ReDoc's own response, so a page view generates the spec once.
 - `servers` comes from the addresses the server is listening on, not from the request — behind a
   reverse proxy that's the internal address. Set it with an `AddDocumentTransformer`; that's the fix
   for a proxied `MapOpenApi()` too.
@@ -689,13 +691,17 @@ code blocks in one go. If you set both accents, the printed copy uses `PrimaryCo
 | Served as | the stored bytes for whichever encoding the request accepts — nothing is compressed per request |
 | Size on the wire | **507 KB** brotli, 634 KB gzip, 2.2 MB for a client that takes neither |
 | Caching | `Cache-Control: public, max-age=31536000, immutable`, `Vary: Accept-Encoding`, a strong ETag per encoding |
-| URL | `{RoutePrefix}/_redoc/redoc.standalone.js`, once for the whole site — switching documents re-downloads nothing |
+| URL | `{RoutePrefix}/_redoc/redoc.standalone.js?v={hash}`, once for the whole site — switching documents re-downloads nothing, and a package upgrade that changes the bundle changes the URL |
 
 Both encodings are built at quality 11 before the file is checked in, which is affordable exactly
 because the bundle is fixed for the life of a package version. Response-compression middleware in
 your pipeline has nothing to do here — the response already carries a `Content-Encoding`. Brotli is
 preferred wherever the request accepts it, and `Accept-Encoding` is parsed rather than searched, so
 `br;q=0` means what it says.
+
+The page and its stylesheet and scripts are generated at startup and served with a strong ETag
+and `Cache-Control: no-cache` (`private, no-cache` for a gated document), so a returning viewer
+gets a `304`. Anything over 1 KB is sent brotli or gzip, compressed once on first request.
 
 For comparison: `Redoc.AspNetCore` sends its bundle uncompressed with no `Cache-Control` at all, and
 Swashbuckle sends `max-age=0`.

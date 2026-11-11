@@ -164,14 +164,69 @@ internal static class ReDocPage
     /// The import specifier is resolved against this file's own URL, which is the page's
     /// directory, so the same relative href works from every page whatever its route depth.
     /// </remarks>
-    public static string InitScript(string bundleHref, string specUrl, string configJson) =>
+    /// <param name="bundleHref">The bundle's href relative to the page, version included.</param>
+    /// <param name="specUrl">The spec URL ReDoc reads.</param>
+    /// <param name="configJson">The ReDoc config.</param>
+    /// <param name="shareSpec">
+    /// Whether the try-it console is on the page and should be handed ReDoc's own copy of the
+    /// spec — see <see cref="SpecHandOff"/>.
+    /// </param>
+    public static string InitScript(
+        string bundleHref, string specUrl, string configJson, bool shareSpec = false) =>
         $$"""
         import { init } from {{JsonString(bundleHref)}};
-
+        {{(shareSpec ? SpecHandOff(specUrl) : string.Empty)}}
         init(
           {{JsonString(specUrl)}},
           {{configJson}},
           document.getElementById('redoc-container'));
+
+        """;
+
+    /// <summary>
+    /// The key, under <c>Symbol.for</c> on <c>window</c>, where the init script leaves ReDoc's
+    /// spec response for <c>redoc-tryit.js</c>.
+    /// </summary>
+    public const string SpecHandOffKey = "hlibz.redoc.spec";
+
+    /// <summary>
+    /// Catches ReDoc's own fetch of the spec and keeps a clone of the response for the try-it
+    /// console, so a page with the console fetches — and a served spec is generated — once
+    /// rather than twice.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The other way round, fetching here and handing ReDoc the parsed object, costs more than it
+    /// saves: <c>init</c> takes a spec <em>or</em> a URL, and without the URL ReDoc 3.0.1 drops
+    /// its default download link and every page action that names the spec's address.
+    /// </para>
+    /// <para>
+    /// <c>fetch</c> is wrapped only until the spec's URL goes through it, then put back. The clone
+    /// is taken in a reaction registered before ReDoc's own, so it happens before ReDoc reads the
+    /// body. If the bundle fails to load, this module never runs, nothing is left under the key,
+    /// and the console fetches the spec itself as it did before.
+    /// </para>
+    /// </remarks>
+    private static string SpecHandOff(string specUrl) =>
+        $$"""
+
+        {
+          const specHref = new URL({{JsonString(specUrl)}}, document.baseURI).href;
+          const original = window.fetch;
+          let settle;
+          window[Symbol.for('{{SpecHandOffKey}}')] = new Promise((resolve, reject) => {
+            settle = { resolve, reject };
+          });
+          window.fetch = function (input) {
+            const result = original.apply(window, arguments);
+            const url = input instanceof Request ? input.url : String(input);
+            if (new URL(url, document.baseURI).href === specHref) {
+              window.fetch = original;
+              result.then((response) => settle.resolve(response.clone()), settle.reject);
+            }
+            return result;
+          };
+        }
 
         """;
 
@@ -506,9 +561,11 @@ internal static class ReDocPage
         {
             writer.WriteStartObject();
             writer.WriteBoolean("disableTelemetry", !options.EnableTelemetry);
+            // Plural on ReDoc 3: 2.x's singular `hideDownloadButton` is ignored by 3.0.1, which
+            // has no alias for it, so writing that name hid nothing.
             if (options.HideDownloadButton)
             {
-                writer.WriteBoolean("hideDownloadButton", true);
+                writer.WriteBoolean("hideDownloadButtons", true);
             }
 
             if (options.RequiredPropsFirst)

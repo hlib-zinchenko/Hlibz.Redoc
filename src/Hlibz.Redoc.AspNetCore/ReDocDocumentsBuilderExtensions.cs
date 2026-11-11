@@ -74,18 +74,18 @@ public static class ReDocDocumentsBuilderExtensions
                 context => site.WritePage(context, current)));
             own.Add(endpoints.MapGet(
                 $"{route}/{ReDocPage.StyleFileName}",
-                context => ReDocAssets.Write(context, current.Css, "text/css")));
+                context => current.Css.WriteAsync(context, current.CacheControl)));
             own.Add(endpoints.MapGet(
                 $"{route}/{ReDocPage.InitFileName}",
-                context => ReDocAssets.Write(context, current.InitScript, "text/javascript")));
+                context => current.InitScript.WriteAsync(context, current.CacheControl)));
             own.Add(endpoints.MapGet(
                 $"{route}/{ReDocPage.ColorModeFileName}",
-                context => ReDocAssets.Write(context, current.ColorModeScript, "text/javascript")));
+                context => current.ColorModeScript.WriteAsync(context, current.CacheControl)));
             if (current.PickerScript is { } picker)
             {
                 own.Add(endpoints.MapGet(
                     $"{route}/{ReDocPage.PickerFileName}",
-                    context => ReDocAssets.Write(context, picker, "text/javascript")));
+                    context => picker.WriteAsync(context, current.CacheControl)));
             }
 
             // In this document's own group, which is the whole point: one ForDocument(...)
@@ -101,7 +101,7 @@ public static class ReDocDocumentsBuilderExtensions
             {
                 own.Add(endpoints.MapGet(
                     $"{route}/{ReDocPage.ToolbarFileName}",
-                    context => ReDocAssets.Write(context, toolbar, "text/javascript")));
+                    context => toolbar.WriteAsync(context, current.CacheControl)));
             }
 
             // Per page rather than once under _redoc/: a page's own group is what a policy on one
@@ -110,7 +110,7 @@ public static class ReDocDocumentsBuilderExtensions
             {
                 own.Add(endpoints.MapGet(
                     $"{route}/{ReDocTryIt.FileName}",
-                    context => ReDocAssets.Write(context, ReDocTryIt.Script, "text/javascript")));
+                    context => ReDocTryIt.File.WriteAsync(context, current.CacheControl)));
             }
 
             added.AddRange(own);

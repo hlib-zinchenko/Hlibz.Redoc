@@ -169,7 +169,17 @@ Three decisions worth keeping: the provider is resolved per request (an implemen
 scoped) while *which* provider is settled at startup; the document is buffered rather than streamed,
 so a generator that throws half-way produces a 500 rather than a 200 carrying half a document; and
 the spec is sent `no-store`, alone among the things this package serves, because a shared cache
-holding a gated document would hand it on.
+holding a gated document would hand it on. It is still compressed, per request at the fast
+setting: after the bundle it is usually the largest thing a page fetches, and JSON shrinks by about
+nine-tenths (45 KB to 6 KB for the sample's widget catalog).
+
+With the try-it console on, `redoc-init.js` wraps `fetch` until ReDoc requests the spec, keeps a
+clone of that response under `Symbol.for('hlibz.redoc.spec')`, and restores `fetch`. The console
+reads it from there, so the spec is generated once per page view rather than twice. The other way
+round, fetching first and handing ReDoc the parsed object, was rejected: ReDoc 3.0.1's `init` takes
+a spec *or* a URL, and without the URL it drops its default download link and every page action
+that names the spec's address. If the bundle fails to load, the init module never runs and the
+console fetches the spec itself.
 
 Output was diffed against `MapOpenApi()`'s endpoint: identical but for the assembly-name tag and the
 port. `servers` comes from the server's own addresses rather than the request, unlike `MapOpenApi`'s
@@ -223,7 +233,16 @@ an upgrade that doesn't update the note fails a test rather than making the note
 
 Served once for the whole site at `{RoutePrefix}/_redoc/`, imported by each page's `redoc-init.js`
 through a relative href, so one cached copy serves every page and the URLs survive a path-rewriting
-proxy.
+proxy. The href carries `?v=` and the first twelve hex digits of the gzip copy's hash: the bundle is
+sent `immutable` for a year, so without a new URL an upgrade would reach a returning viewer a year
+late. Matching ignores the query, so an old page still gets the current bundle.
+
+Everything else a page loads is a `ReDocFile`, built at startup: a strong ETag per encoding and
+`no-cache`, since these files change with configuration under the same URL. Files of a gated
+document are `private, no-cache`. Brotli and gzip copies are made at the smallest setting on the
+first request that wants each one, rather than at startup, which keeps building a site cheap.
+Files under 1 KB are never compressed. Identical content is one `ReDocFile` however many pages share
+it, and the try-it script is one for the whole process.
 
 `ReDocPage.ConfigJson` writes the config with `Utf8JsonWriter`, never `JsonSerializer`: a slim or
 AOT host has reflection-based serialization off.
