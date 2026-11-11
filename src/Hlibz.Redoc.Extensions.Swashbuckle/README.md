@@ -126,7 +126,7 @@ app.UseReDocDocuments(
     ],
     docs =>
     {
-        docs.SpecUrlTemplate = "/swagger/{documentName}/swagger.json";
+        docs.SpecUrlTemplate = ReDocDocumentsOptions.SwashbuckleSpecUrlTemplate;
         docs.ConfigureReDoc = (redoc, _) =>
             redoc.UseDarkTheme(theme => theme.EnableThemeSelector(defaultTheme: ReDocTheme.System));
     });
@@ -171,7 +171,7 @@ label: it isn't selectable and changes no route.
 |---|---|
 | `RoutePrefix` | Where pages go by default. Defaults to `"api-docs"`. |
 | `RedirectToFirstDocument` | Redirect `/{RoutePrefix}` to the first document. Defaults to `true`. |
-| `SpecUrlTemplate` | Defaults to `"/openapi/{documentName}.json"`; Swashbuckle's own `UseSwagger` serves `/swagger/{documentName}/swagger.json`. |
+| `SpecUrlTemplate` | Defaults to `"/openapi/{documentName}.json"`; for Swashbuckle's own `UseSwagger` (`/swagger/{documentName}/swagger.json`), set it to `ReDocDocumentsOptions.SwashbuckleSpecUrlTemplate`. |
 | `ValidateDocumentNames` | Check at startup that every name is a registered document. Defaults to `true`. |
 | `Links` | Plain entries listed after the documents, e.g. `new ReDocLink("Swagger UI", "~/swagger")`. |
 | `ConfigureReDoc` | `Action<ReDocOptions, ReDocDocument>`, run for every page: theme, extra `HeadContent`, and so on. |
@@ -345,10 +345,32 @@ A page with nothing inline at all, served under `script-src 'self'` with no nonc
 | Fonts still requested from Google | families set, but the `<link>` is separate | `UseSystemFonts()` or `LoadGoogleFonts = false` |
 | Your own `IndexStream` has no effect | `UseDarkTheme` wraps it | set `IndexStream` before calling `UseDarkTheme` |
 
+## Scalar beside ReDoc
+
+ReDoc has no request console; that is a Redocly commercial feature. [Scalar](https://github.com/scalar/scalar)
+is an MIT-licensed renderer for the same documents that has one, so mounting it beside the ReDoc
+pages and linking it from the picker gives viewers both:
+
+```csharp
+// dotnet add package Scalar.AspNetCore
+using Scalar.AspNetCore;
+
+app.MapScalarApiReference();   // /scalar/ lists every document, /scalar/{documentName} opens one
+
+app.UseReDocDocuments(documents, docs =>
+    docs.Links.Add(new ReDocLink("Open in Scalar", "~/scalar/")));
+```
+
+Scalar reads `MapOpenApi()`'s `/openapi/{documentName}.json` by default. For Swashbuckle's
+`UseSwagger`, point it there with
+`MapScalarApiReference(scalar => scalar.WithOpenApiRoutePattern("/swagger/{documentName}/swagger.json"))`.
+Checked against Scalar.AspNetCore 2.18.7.
+
 ## What this doesn't do
 
 - It doesn't generate OpenAPI documents — Swashbuckle still does that.
-- No "Try it" console: that's a Redocly commercial feature.
+- No "Try it" console: that's a Redocly commercial feature. [Scalar beside ReDoc](#scalar-beside-redoc)
+  is the way to get one.
 - It doesn't change ReDoc's version. The page is ReDoc 2.5.4, whatever this package adds to it.
 - `Unlisted` hides a document from the picker. It is not access control, and this host cannot
   attach a policy to a page at all — its ReDoc page is middleware, which carries no metadata.

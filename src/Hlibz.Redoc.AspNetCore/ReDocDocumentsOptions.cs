@@ -19,6 +19,7 @@ public sealed class ReDocDocumentsOptions : ReDocDocumentsOptionsBase
     private string? primaryColor;
     private string? darkModePrimaryColor;
     private string? contentSecurityPolicy;
+    private TimeSpan? specCacheDuration;
 
     /// <summary>
     /// The policy these pages are known to render under, measured rather than reasoned about:
@@ -74,11 +75,56 @@ public sealed class ReDocDocumentsOptions : ReDocDocumentsOptionsBase
     /// then two settings disagree about where every page reads its spec from.
     /// </para>
     /// <para>
-    /// A generated spec is not cached: it is built per request, like <c>MapOpenApi</c>'s, and sent
-    /// <c>no-store</c> so a shared proxy can't hand a gated document to the next caller.
+    /// A generated spec is not cached unless <see cref="SpecCacheDuration"/> says so: it is built
+    /// per request, like <c>MapOpenApi</c>'s, and sent <c>no-store</c> so a shared proxy can't hand
+    /// a gated document to the next caller.
     /// </para>
     /// </remarks>
     public bool ServeSpecs { get; set; }
+
+    /// <summary>
+    /// How long a spec this package serves is reused once generated, or <see langword="null"/>,
+    /// the default, to generate it on every request. Only for documents with no authorization on
+    /// them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Set, each served spec is generated at most once per this period and then sent from memory
+    /// with an ETag and <c>Cache-Control: private, no-cache</c>, so a returning browser
+    /// revalidates and gets a <c>304</c> rather than the document again. Worth having when
+    /// generating a large document is slow or many people read the docs. Only turn it on when
+    /// the document is the same for everyone: a document transformer that reads the request or
+    /// the user would otherwise hand one viewer's document to the next.
+    /// </para>
+    /// <para>
+    /// A document behind authorization is never cached, whichever way it was gated —
+    /// <see cref="ReDocDocumentExtensions.RequireAuthorization"/> on the document, or
+    /// <c>ForDocument(...)</c> and <c>RequireAuthorization</c> on the returned builder. Its spec
+    /// is still generated per request and sent <c>no-store</c>, because who is asking may change
+    /// what it contains and no cache should hold it.
+    /// </para>
+    /// <para>
+    /// It applies to specs this package serves, through <see cref="ServeSpecs"/> or a gated
+    /// document, and throws when the pages are mapped if no page serves one.
+    /// </para>
+    /// </remarks>
+    public TimeSpan? SpecCacheDuration
+    {
+        get => specCacheDuration;
+        set
+        {
+            if (value is { } duration && duration <= TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(SpecCacheDuration),
+                    duration,
+                    "SpecCacheDuration must be positive, or null to generate the spec per "
+                    + "request.");
+            }
+
+            specCacheDuration = value;
+        }
+    }
 
     /// <summary>
     /// The color mode a first-time viewer sees. Defaults to <see cref="ReDocColorMode.System"/>.
@@ -140,10 +186,10 @@ public sealed class ReDocDocumentsOptions : ReDocDocumentsOptionsBase
     /// <remarks>
     /// <para>
     /// A preset re-points ReDoc 3's grey ramp, which every surface, border and piece of text is
-    /// derived from, so it is a whole dark theme rather than a tint. It applies to dark mode only:
-    /// all of them are dark palettes, and a light counterpart invented here would be nobody's
-    /// theme. Set <see cref="DefaultColorMode"/> to <see cref="ReDocColorMode.Dark"/> if a
-    /// first-time viewer on a light OS should see it too.
+    /// derived from, so it is a whole dark theme rather than a tint. It applies to dark mode only;
+    /// <see cref="LightThemePreset"/> is the light-mode setting. Set
+    /// <see cref="DefaultColorMode"/> to <see cref="ReDocColorMode.Dark"/> if a first-time viewer
+    /// on a light OS should see it too.
     /// </para>
     /// <para>
     /// <see cref="PrimaryColor"/> or <see cref="DarkModePrimaryColor"/> replaces the preset's
@@ -152,6 +198,24 @@ public sealed class ReDocDocumentsOptions : ReDocDocumentsOptionsBase
     /// </para>
     /// </remarks>
     public ReDocDarkThemePreset DarkThemePreset { get; set; } = ReDocDarkThemePreset.None;
+
+    /// <summary>
+    /// A named palette for ReDoc's light mode. Defaults to
+    /// <see cref="ReDocLightThemePreset.None"/>, which leaves ReDoc's own.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The light-mode counterpart of <see cref="DarkThemePreset"/>, set independently of it: the
+    /// grey ramp, the page background and the accent while the page is not in dark mode. Pair
+    /// presets of the same palette to follow one theme in both modes.
+    /// </para>
+    /// <para>
+    /// <see cref="PrimaryColor"/> replaces the preset's accent; <see cref="DarkModePrimaryColor"/>
+    /// doesn't, since it says nothing about light mode. <see cref="AdditionalCss"/> comes after
+    /// the preset and can reach the rest.
+    /// </para>
+    /// </remarks>
+    public ReDocLightThemePreset LightThemePreset { get; set; } = ReDocLightThemePreset.None;
 
     /// <summary>
     /// Where the document picker sits. Defaults to <see cref="ReDocToolbarPlacement.TopRight"/>.

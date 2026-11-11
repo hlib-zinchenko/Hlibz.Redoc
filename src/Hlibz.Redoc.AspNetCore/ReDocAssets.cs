@@ -1,5 +1,6 @@
 using System.Text;
 
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Net.Http.Headers;
 
@@ -53,8 +54,24 @@ internal static class ReDocAssets
     /// request, at the fast setting, since a spec is usually the largest thing a page fetches
     /// after the bundle and JSON shrinks by around nine-tenths.
     /// </remarks>
-    public static async Task WriteSpec(HttpContext context, OpenApiSpecSource spec)
+    /// <param name="context">The request.</param>
+    /// <param name="spec">Where the document comes from.</param>
+    /// <param name="cache">
+    /// The page's cache when <see cref="ReDocDocumentsOptions.SpecCacheDuration"/> is set. Skipped
+    /// for a request whose endpoint carries authorization, which is how a document gated through
+    /// the convention builder, invisible when the site was built, stays uncached.
+    /// </param>
+    public static async Task WriteSpec(
+        HttpContext context, OpenApiSpecSource spec, ReDocSpecCache? cache = null)
     {
+        if (cache is not null
+            && context.GetEndpoint()?.Metadata.GetMetadata<IAuthorizeData>() is null)
+        {
+            ReDocFile cached = await cache.GetAsync(context.RequestServices);
+            await cached.WriteAsync(context, "private, no-cache");
+            return;
+        }
+
         string json = await spec.GenerateAsync(context.RequestServices);
         byte[] body = Encoding.UTF8.GetBytes(json);
 

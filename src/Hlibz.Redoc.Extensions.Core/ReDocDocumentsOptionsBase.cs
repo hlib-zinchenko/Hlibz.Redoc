@@ -15,6 +15,17 @@ public abstract class ReDocDocumentsOptionsBase
     internal const string DefaultSpecUrlTemplate = "/openapi/{documentName}.json";
 
     /// <summary>
+    /// Where Swashbuckle's <c>UseSwagger()</c> serves each document by default,
+    /// <c>"/swagger/{documentName}/swagger.json"</c>, for <see cref="SpecUrlTemplate"/> in an app
+    /// that generates its specs with Swashbuckle rather than <c>AddOpenApi()</c>.
+    /// </summary>
+    /// <remarks>
+    /// Only Swashbuckle's default: an app that changed <c>SwaggerOptions.RouteTemplate</c> sets
+    /// <see cref="SpecUrlTemplate"/> to that template instead, with <c>{documentName}</c> in it.
+    /// </remarks>
+    public const string SwashbuckleSpecUrlTemplate = "/swagger/{documentName}/swagger.json";
+
+    /// <summary>
     /// Route prefix the document pages are mounted under: each document without its own
     /// <see cref="ReDocDocument.Route"/> is served at <c>/{RoutePrefix}/{Name}/</c>. Defaults to
     /// <c>"api-docs"</c>.

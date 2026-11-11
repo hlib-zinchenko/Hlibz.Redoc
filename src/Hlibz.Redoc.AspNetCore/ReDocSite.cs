@@ -134,6 +134,11 @@ internal sealed class ReDocSite
             : $"document '{gatedPage?.Document.Name}' requires authorization, so every page "
                 + "serves its own spec";
 
+        // Resolved once: a TimeProvider registered by the app (a test's, usually) is the clock the
+        // spec cache expires by.
+        TimeProvider time =
+            (TimeProvider?)services.GetService(typeof(TimeProvider)) ?? TimeProvider.System;
+
         string prefix = options.RoutePrefix.Trim('/');
         string bundleRoute = prefix.Length == 0
             ? $"{AssetFolder}/{ReDocBundle.FileName}"
@@ -251,7 +256,23 @@ internal sealed class ReDocSite
                 page.Document.Unlisted,
                 spec,
                 policies,
-                options.TryIt is not null));
+                options.TryIt is not null,
+                // Never for a gated document, whose spec may differ by who is asking. One gated
+                // through the convention builder instead is caught per request, by its metadata.
+                spec is not null
+                    && policies is null
+                    && options.SpecCacheDuration is { } cacheFor
+                        ? new ReDocSpecCache(spec, cacheFor, time)
+                        : null));
+        }
+
+        // A setting that silently did nothing would be read as working.
+        if (options.SpecCacheDuration is not null && pages.All(page => page.Spec is null))
+        {
+            throw new InvalidOperationException(
+                "SpecCacheDuration caches the specs these pages serve, but none of them serves "
+                + "one: the pages read their specs from SpecUrlTemplate or SpecUrl. Turn on "
+                + "ServeSpecs, or remove SpecCacheDuration.");
         }
 
         return new ReDocSite(
@@ -390,7 +411,7 @@ internal sealed class ReDocSite
                 ReDocPage.ToolbarFileName when page.ToolbarScript is not null =>
                     page.ToolbarScript.WriteAsync(context, page.CacheControl),
                 ReDocPage.SpecFileName when page.Spec is not null =>
-                    ReDocAssets.WriteSpec(context, page.Spec),
+                    ReDocAssets.WriteSpec(context, page.Spec, page.SpecCache),
                 ReDocTryIt.FileName when page.TryIt =>
                     ReDocTryIt.File.WriteAsync(context, page.CacheControl),
                 _ => next(context),
@@ -414,7 +435,8 @@ internal sealed record ReDocSitePage(
     bool Unlisted,
     OpenApiSpecSource? Spec,
     IReadOnlyList<string>? Policies,
-    bool TryIt = false)
+    bool TryIt = false,
+    ReDocSpecCache? SpecCache = null)
 {
     /// <summary>
     /// What this page's files are sent with: always revalidated, and kept out of shared caches

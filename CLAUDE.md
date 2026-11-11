@@ -51,13 +51,15 @@ one adapter is the supported case; don't "fix" this by renaming types apart.
 # Build everything
 dotnet build
 
-# Run the tests — five suites: core, the shared conformance source per adapter, our host, then
-# the try-it console in a browser (system Chrome, else Playwright's Chromium is installed)
+# Run the tests — six suites: core, the shared conformance source per adapter, our host, then
+# two in a browser (system Chrome, else Playwright's Chromium is installed): the try-it console,
+# and the adapters' dark theme on both hosts
 dotnet test --project tests/Hlibz.Redoc.Extensions.Core.Tests
 dotnet test --project tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests
 dotnet test --project tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests
 dotnet test --project tests/Hlibz.Redoc.AspNetCore.Tests
 dotnet test --project tests/Hlibz.Redoc.AspNetCore.BrowserTests
+dotnet test --project tests/Hlibz.Redoc.Extensions.BrowserTests
 
 # Run the sample apps (each opens /api-docs automatically, see launchSettings.json)
 dotnet run --project samples/Sample.RedocAspNetCore   # :5299
@@ -163,10 +165,12 @@ takes one project at a time.
     two answers about where a page reads its spec. `servers` in a generated document comes from
     the server's own addresses rather than the request, unlike `MapOpenApi`'s — an
     `AddDocumentTransformer` is the fix, and the README says so.
-  - `assets/redoc.standalone.js.gz` is the ReDoc bundle, **checked in gzipped and served that way**.
+  - `assets/redoc.standalone.js.br` and `.gz` are the ReDoc bundle, **checked in pre-compressed
+    (both at quality 11) and served that way**: brotli where the request accepts it, gzip next,
+    and a decompressed copy made on demand for a client that takes neither (`ReDocBundle`).
     No Node, no `npm`, no build-time download: `assets/README.md` records the version, the npm
-    tarball integrity and the upgrade steps. `gzip -n` on upgrade, or the file differs on every
-    run. That note is **embedded into the test assembly**, and every row of its table is asserted
+    tarball integrity and the upgrade steps. Regenerate both files together — a test decompresses
+    each and compares them — and use `gzip -n` on upgrade, or the `.gz` differs on every run. That note is **embedded into the test assembly**, and every row of its table is asserted
     against the shipped bundle — version, tarball name, the uncompressed sha256, and all three byte
     counts — so an upgrade that doesn't update the note fails a test rather than making the note a
     lie. The one row a test can't reach is the npm tarball's own integrity hash, for a file the
@@ -205,7 +209,20 @@ takes one project at a time.
     page. Option names are ReDoc 3's, not 2.x's: `HideDownloadButton` writes `hideDownloadButtons`
     (plural), because 3.0.1 silently ignores the singular. Check any new option name against the
     bundle.
-  - `ReDocDarkThemePresets` (internal) backs `ThemePreset` — Midnight / Nord / GitHubDark, each eleven
+  - `ReDocLightThemePresets` (internal) backs `LightThemePreset` — Nord and GitHubLight, the
+    palettes that publish a light variant; no light Midnight, which would be invented. Light
+    mode's layout differs from dark's, read off 3.0.1's stylesheet: the ramp runs lightest-first
+    but the page is `--color-white`, not a slot (dark mode redefines `--color-white` as black),
+    so a light preset is a page color plus eleven greys plus an accent, under
+    `:root:root:not(.dark)`. Only `PrimaryColor` turns its accent off; `DarkModePrimaryColor`
+    says nothing about light mode.
+  - `SpecCacheDuration` (`ReDocSpecCache`) reuses a served spec for that long, as a `ReDocFile`
+    (ETag, `private, no-cache`), and one generation is shared by every request waiting on it.
+    Never for a gated document: `RequireAuthorization` on the document is known at build time,
+    while `ForDocument(...).RequireAuthorization()` is only visible on the endpoint, so
+    `WriteSpec` also checks for `IAuthorizeData` per request. The clock is a `TimeProvider`
+    from DI when there is one, which is how the tests move time.
+  - `ReDocDarkThemePresets` (internal) backs `DarkThemePreset` — Midnight / Nord / GitHubDark, each eleven
     `--color-warm-grey-N` values plus an accent, under `:root:root.dark`. That is a whole theme
     because of the ramp fact above, and it is **dark mode only**: all three are dark palettes.
     Setting `PrimaryColor` or `DarkModePrimaryColor` turns the preset's accent off rather than
@@ -547,6 +564,20 @@ takes one project at a time.
   project so the host suite still runs where there is no browser. Chrome is launched through the
   `chrome` channel; only if that fails is Playwright's Chromium installed, via
   `Microsoft.Playwright.Program.Main`, which needs no PowerShell.
+- `tests/Hlibz.Redoc.Extensions.BrowserTests/` — the adapters' dark theme as both hosts render
+  it. **Both adapters in one process**, referenced with `Aliases="redocaspnetcore"` and
+  `Aliases="swashbuckle"`: each host's wiring is its own file (`RedocAspNetCoreSite.cs`,
+  `SwashbuckleSite.cs`) importing only its alias, which is the one sanctioned way round the
+  `CS0433` the shared type names cause. Core stays global. The probe reads computed colors, not
+  pixels — a screenshot diff fails on another OS's font rendering — for each element an override
+  in `ReDocDarkThemeDefaults` exists for, and asserts them against the palette and the two hosts
+  against each other. Removing the nested-schema override fails it on both hosts (checked).
+  - ReDoc 2's expanders are `aria-label="expand properties"` on 2.0.0 and `"expand {name}"` on
+    2.5.4, and 2.0.0 keeps that label while open — so the probe matches the prefix and clicks
+    each button once. During the theme selector's re-init there is briefly no sidebar.
+  - **Known gap it shows:** a `oneOf` switch's unselected button is a hard-coded white on both
+    redoc 2.0.0 and 2.5.4, and the selected one differs only by a hashed class, so CSS alone
+    can't fix it. The probe records it (identical on both hosts) without asserting a color.
 - `tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests/` and
   `tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests/` — the conformance source plus that one alias
   file, nothing else. Both override `TargetFramework` to `net10.0` and reference

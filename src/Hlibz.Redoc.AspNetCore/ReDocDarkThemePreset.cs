@@ -6,9 +6,10 @@ namespace Hlibz.Redoc.Extensions;
 /// <remarks>
 /// <para>
 /// Each preset re-points ReDoc 3's eleven-step grey ramp and its accent, which between them decide
-/// every surface, border and piece of text on the page. Light mode is left as ReDoc ships it: all
-/// three of these are dark palettes, and a "Nord light" invented here would be neither Nord nor
-/// ReDoc. Pair a preset with <see cref="ReDocColorMode.Dark"/> if everyone should see it.
+/// every surface, border and piece of text on the page. Light mode is left as ReDoc ships it unless
+/// <see cref="ReDocDocumentsOptions.LightThemePreset"/> says otherwise, which offers the palettes
+/// that publish a light variant of their own. Pair a preset with <see cref="ReDocColorMode.Dark"/>
+/// if everyone should see it.
 /// </para>
 /// <para>
 /// A preset is a starting point, not a lock: <see cref="ReDocDocumentsOptions.PrimaryColor"/> and

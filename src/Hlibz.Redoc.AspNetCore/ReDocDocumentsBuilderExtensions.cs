@@ -94,7 +94,7 @@ public static class ReDocDocumentsBuilderExtensions
             {
                 own.Add(endpoints.MapGet(
                     $"{route}/{ReDocPage.SpecFileName}",
-                    context => ReDocAssets.WriteSpec(context, spec)));
+                    context => ReDocAssets.WriteSpec(context, spec, current.SpecCache)));
             }
 
             if (current.ToolbarScript is { } toolbar)
