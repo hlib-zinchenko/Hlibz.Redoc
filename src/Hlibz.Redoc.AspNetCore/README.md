@@ -781,7 +781,9 @@ preferred wherever the request accepts it, and `Accept-Encoding` is parsed rathe
 
 The page and its stylesheet and scripts are generated at startup and served with a strong ETag
 and `Cache-Control: no-cache` (`private, no-cache` for a gated document), so a returning viewer
-gets a `304`. Anything over 1 KB is sent brotli or gzip, compressed once on first request.
+gets a `304`. Anything over 1 KB is sent brotli or gzip, compressed once on first request. The page
+preloads the bundle and the spec, so both are requested as soon as the page is parsed rather than
+one after the other.
 
 For comparison: `Redoc.AspNetCore` sends its bundle uncompressed with no `Cache-Control` at all, and
 Swashbuckle sends `max-age=0`.

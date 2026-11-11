@@ -228,6 +228,8 @@ internal sealed class ReDocSite
                         options,
                         withPicker,
                         withToolbarItems,
+                        BundleHref(page.Route),
+                        specUrl,
                         options.TryIt is { } tryIt
                             ? ReDocTryIt.Tag(specUrl, page.Route, tryIt)
                             : null),
