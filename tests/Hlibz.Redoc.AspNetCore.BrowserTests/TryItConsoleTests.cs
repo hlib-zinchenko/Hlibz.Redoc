@@ -121,6 +121,102 @@ public sealed class TryItConsoleTests(TryItSite site) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Sections_FoldOnTheirOwnAndStayFoldedInTheDraft()
+    {
+        ILocator dialog = await OpenAtAsync("searchwidgets");
+        ILocator query = Fold(dialog, "Query");
+        ILocator extra = Fold(dialog, "Extra headers");
+
+        // Extra headers start shut, saying there are none.
+        await Expect(extra.Locator("summary")).ToContainTextAsync("none");
+        await extra.Locator("summary").ClickAsync();
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Add header" }).ClickAsync();
+        await dialog.GetByLabel("Header name").FillAsync("X-Trace");
+
+        // One folds, the other stays; the folded heading says what it still holds.
+        await query.Locator("summary").ClickAsync();
+        await Expect(Field(dialog, "status")).Not.ToBeVisibleAsync();
+        await Expect(query.Locator("summary")).ToContainTextAsync("6 of 6 set");
+        await Expect(dialog.GetByLabel("Header name")).ToBeVisibleAsync();
+
+        await extra.Locator("summary").ClickAsync();
+        await Expect(dialog.GetByLabel("Header name")).Not.ToBeVisibleAsync();
+        await Expect(extra.Locator("summary")).ToContainTextAsync("1 set");
+
+        // Folded is not left out: the request still carries the query.
+        await SendAsync(dialog);
+        await Expect(Status(dialog)).ToHaveTextAsync("200");
+        await Expect(Response(dialog)).ToContainTextAsync("/widgets/search?name=Keyboard");
+
+        await page.Keyboard.PressAsync("Escape");
+        await Expect(dialog).Not.ToBeVisibleAsync();
+        await OpenerAt("searchwidgets").ClickAsync();
+
+        await Expect(query).Not.ToHaveAttributeAsync("open", "");
+        await Expect(extra).Not.ToHaveAttributeAsync("open", "");
+        await query.Locator("summary").ClickAsync();
+        await Expect(Field(dialog, "status")).ToHaveValueAsync("Active");
+    }
+
+    [Fact]
+    public async Task Authorization_StartsFoldedOnceACredentialIsTyped()
+    {
+        ILocator dialog = await OpenAsync("/widgets", "post");
+        ILocator auth = Fold(dialog, "Authorization");
+        await Expect(auth).ToHaveAttributeAsync("open", "");
+        await Field(dialog, "Token").FillAsync("any-token");
+
+        // Another operation taking the same scheme: nothing left to type, so it is out of the way.
+        // Reached by its anchor without reloading, which would forget what was typed.
+        await page.Keyboard.PressAsync("Escape");
+        string hash = await page.EvaluateAsync<string>("() => location.hash");
+        await page.EvaluateAsync(
+            "hash => { location.hash = hash; }",
+            hash[..hash.IndexOf("/paths/", StringComparison.Ordinal)]
+                + "/" + Anchor("/widgets/{id}", "put"));
+        await OpenerFor("/widgets/{id}", "put").ClickAsync();
+        await Expect(dialog.Locator("h2")).ToHaveTextAsync("/widgets/{id}");
+
+        await Expect(auth).Not.ToHaveAttributeAsync("open", "");
+        await Expect(auth.Locator("summary")).ToContainTextAsync("set");
+        await Expect(auth.Locator("summary")).Not.ToContainTextAsync("any-token");
+
+        // And the server folds like the rest, naming where the request will go.
+        // The server starts folded, naming where the request will go.
+        ILocator server = Fold(dialog, "Server");
+        await Expect(server.Locator("summary")).ToContainTextAsync(site.Address);
+        await server.Locator("summary").ClickAsync();
+        await Expect(Field(dialog, "Base URL")).ToBeVisibleAsync();
+
+        // So does the body; one that can't be sent comes back out with the error.
+        ILocator body = dialog.Locator("details.hlibz-tryit-fold")
+            .Filter(new() { Has = page.Locator("textarea") });
+        await dialog.Locator("textarea").FillAsync("{ not json");
+        await body.Locator("summary").ClickAsync();
+        await Expect(body.Locator("summary")).ToContainTextAsync("application/json");
+        await Expect(dialog.Locator("textarea")).Not.ToBeVisibleAsync();
+        await SendAsync(dialog);
+        await Expect(dialog.Locator(".hlibz-tryit-error")).ToContainTextAsync("The body is not valid");
+        await Expect(dialog.Locator("textarea")).ToBeVisibleAsync();
+    }
+
+    [Fact]
+    public async Task FoldedSection_OpensWhenARequiredValueInItIsMissing()
+    {
+        ILocator dialog = await OpenAsync("/widgets/{id}", "get");
+        ILocator path = Fold(dialog, "Path");
+        await Field(dialog, "id").FillAsync("");
+        await path.Locator("summary").ClickAsync();
+        await Expect(path.Locator("summary")).ToContainTextAsync("0 of 1 set");
+        await Expect(Field(dialog, "id")).Not.ToBeVisibleAsync();
+
+        await SendAsync(dialog);
+
+        await Expect(dialog.Locator(".hlibz-tryit-error")).ToBeVisibleAsync();
+        await Expect(Field(dialog, "id")).ToBeVisibleAsync();
+    }
+
+    [Fact]
     public async Task Search_SendsEachQueryParameterInItsDeclaredStyle()
     {
         // ReDoc anchors this one by its operationId, /{tag}/searchwidgets, not by its path, so
@@ -184,6 +280,7 @@ public sealed class TryItConsoleTests(TryItSite site) : IAsyncLifetime
         await SendAsync(dialog);
         await Expect(Status(dialog)).ToHaveTextAsync("200");
 
+        await Fold(dialog, "Extra headers").Locator("summary").ClickAsync();
         await dialog.GetByRole(AriaRole.Button, new() { Name = "Add header" }).ClickAsync();
         await dialog.GetByLabel("Header name").FillAsync("bad name");
         await SendAsync(dialog);
@@ -273,6 +370,7 @@ public sealed class TryItConsoleTests(TryItSite site) : IAsyncLifetime
         await Expect(Status(dialog)).ToHaveTextAsync("200");
         await Expect(Response(dialog)).ToContainTextAsync("Mechanical Keyboard");
 
+        await Fold(dialog, "Server").Locator("summary").ClickAsync();
         await Field(dialog, "Accept").SelectOptionAsync("text/csv");
         await SendAsync(dialog);
         await Expect(Response(dialog)).ToContainTextAsync("id,name,price,status");
@@ -335,7 +433,7 @@ public sealed class TryItConsoleTests(TryItSite site) : IAsyncLifetime
         await Expect(Response(dialog)).ToContainTextAsync("30");
 
         // The other server has no variables, so the field goes with it.
-        await Field(dialog, "Server").SelectOptionAsync("1");
+        await Field(dialog, "Base URL").SelectOptionAsync("1");
         await Expect(Field(dialog, "{region}")).ToHaveCountAsync(0);
         await SendAsync(dialog);
         await Expect(dialog.Locator(".hlibz-tryit-url"))
@@ -387,6 +485,14 @@ public sealed class TryItConsoleTests(TryItSite site) : IAsyncLifetime
             })
             .Locator("input, select")
             .First;
+
+    /// <summary>The folding section whose heading is <paramref name="title"/>.</summary>
+    private static ILocator Fold(ILocator dialog, string title) =>
+        dialog.Locator("details.hlibz-tryit-fold")
+            .Filter(new()
+            {
+                Has = dialog.Page.GetByRole(AriaRole.Heading, new() { Name = title, Exact = true }),
+            });
 
     private static Task SendAsync(ILocator dialog) =>
         dialog.Locator(".hlibz-tryit-send").ClickAsync();

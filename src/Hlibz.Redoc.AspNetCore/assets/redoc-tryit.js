@@ -901,12 +901,16 @@
       serverValues: state.server.values(),
       accept: state.accept ? state.accept.value : undefined,
       headers: state.extraHeaders(),
+      folded: {},
       params: {},
       body: null,
       response: null,
     };
     state.params.forEach(function (item) {
       draft.params[paramKey(item.param)] = item.input.value;
+    });
+    Object.keys(state.folds).forEach(function (key) {
+      draft.folded[key] = !state.folds[key].open;
     });
     if (state.body) {
       draft.body = {
@@ -1217,9 +1221,30 @@
     var op = entry.op;
     var servers = serversFor(entry);
     var schemes = schemesFor(op);
-    var state = { entry: entry, opener: opener, params: [], auth: [], body: null, server: null };
+    var state = {
+      entry: entry, opener: opener, params: [], auth: [], body: null, server: null, folds: {},
+    };
     current = state;
     var draft = drafts[draftKey(entry)] || null;
+
+    // A section that folds away under its heading: an operation with a long query, or a dozen
+    // extra headers, otherwise pushes Send and the response off the bottom of the panel. Each
+    // folds on its own, and the draft remembers which were shut. A <details>, so the keyboard,
+    // a screen reader and find-in-page all work without script; while shut, the heading says
+    // what the section holds (tally), since a folded section still goes out with the request.
+    // shut is how it starts on an operation with no draft yet; after that the draft decides.
+    var foldable = function (key, title, tally, children, shut) {
+      var note = h('span', { class: 'hlibz-tryit-fold-tally' });
+      var details = h('details', { class: 'hlibz-tryit-section hlibz-tryit-fold' },
+        h('summary', null, h('h3', null, title), note),
+        children);
+      var describe = function () { note.textContent = details.open ? '' : tally(); };
+      details.open = !(draft && draft.folded && key in draft.folded ? draft.folded[key] : shut);
+      details.addEventListener('toggle', describe);
+      describe();
+      state.folds[key] = details;
+      return details;
+    };
 
     // Server
     var serverSelect = h('select', { class: 'hlibz-tryit-input' },
@@ -1281,7 +1306,12 @@
       url: function () {
         var typed = {};
         Object.keys(varInputs).forEach(function (name) { typed[name] = varInputs[name].value; });
-        return resolveServer(shown, typed);
+        try {
+          return resolveServer(shown, typed);
+        } catch (e) {
+          state.folds.server.open = true; // the variable that needs a value is in there
+          throw e;
+        }
       },
     };
 
@@ -1307,10 +1337,14 @@
             });
           },
         })) : null;
-      authSection = h('section', { class: 'hlibz-tryit-section' },
-        h('h3', { text: 'Authorization' }),
-        forget,
-        schemes.map(function (s) {
+      // Whether anything is typed for a scheme this operation takes. Never the value itself.
+      var authSet = function () {
+        return state.auth.some(function (s) {
+          var values = credentials[s.name] || {};
+          return Object.keys(values).some(function (name) { return !!values[name]; });
+        });
+      };
+      var authFields = [forget].concat(schemes.map(function (s) {
           if (!s.handler) {
             return h('p', { class: 'hlibz-tryit-hint', text: s.name + ': ' + (s.scheme.type || 'unknown') + ' is not supported here.' });
           }
@@ -1336,6 +1370,11 @@
             h('legend', { text: s.name + ' · ' + s.handler.describe(s.scheme) }),
             inputs);
         }));
+      // Starts shut once there is something to send: credentials are typed once and then are in
+      // the way, on every operation, and after a reload too when the site stores them.
+      authSection = foldable('auth', 'Authorization',
+        function () { return authSet() ? 'set' : 'not set'; },
+        authFields, authSet());
     }
 
     // Parameters, grouped by where they go. Cookie parameters can't be set from fetch.
@@ -1345,8 +1384,12 @@
       if (!list.length) {
         return null;
       }
-      return h('section', { class: 'hlibz-tryit-section' },
-        h('h3', { text: groups[where] }),
+      var inputs = [];
+      var tally = function () {
+        var set = inputs.filter(function (i) { return i.value !== ''; }).length;
+        return set + ' of ' + inputs.length + ' set';
+      };
+      return foldable(where, groups[where], tally,
         list.map(function (p) {
           var required = !!p.required || where === 'path';
           var choices = choicesOf(p);
@@ -1365,6 +1408,7 @@
             ? draft.params[paramKey(p)]
             : paramDefault(p);
           state.params.push({ param: p, input: input });
+          inputs.push(input);
           var label = h('span', null, h('code', { text: p.name }),
             required ? h('span', { class: 'hlibz-tryit-required', text: ' required' }) : null,
             p.deprecated ? h('span', { class: 'hlibz-tryit-deprecated-tag', text: ' deprecated' }) : null);
@@ -1427,13 +1471,17 @@
       return headerRows.map(function (row) { return [row.name.value.trim(), row.value.value]; })
         .filter(function (pair) { return pair[0] !== ''; });
     };
-    var headersSection = h('section', { class: 'hlibz-tryit-section' },
-      h('h3', { text: 'Extra headers' }),
-      headerList,
-      h('div', { class: 'hlibz-tryit-body-bar' },
-        h('span', { class: 'hlibz-tryit-hint',
-          text: 'Headers the spec doesn\'t list. A browser won\'t send some, like Cookie or Host.' }),
-        h('span', { class: 'hlibz-tryit-push' }, addButton)));
+    var headersSection = foldable('extra', 'Extra headers',
+      function () {
+        var named = state.extraHeaders().length;
+        return named ? named + ' set' : 'none';
+      },
+      [headerList,
+        h('div', { class: 'hlibz-tryit-body-bar' },
+          h('span', { class: 'hlibz-tryit-hint',
+            text: 'Headers the spec doesn\'t list. A browser won\'t send some, like Cookie or Host.' }),
+          h('span', { class: 'hlibz-tryit-push' }, addButton))],
+      true);
 
     // Cookie parameters get no field, since a page can't set a request's Cookie header. Named
     // rather than left out, so a request that fails for want of one says why.
@@ -1559,13 +1607,14 @@
         content: requestBody.content,
         required: !!requestBody.required,
       };
-      bodySection = h('section', { class: 'hlibz-tryit-section' },
-        h('h3', null, 'Body', requestBody.required ? h('span', { class: 'hlibz-tryit-required', text: ' required' }) : null),
-        types.length > 1 ? field('Content type', typeSelect) : h('p', { class: 'hlibz-tryit-hint', text: types[0] }),
-        exampleField,
-        filesBox,
-        editor,
-        h('div', { class: 'hlibz-tryit-body-bar' }, note, resetButton));
+      bodySection = foldable('body',
+        ['Body', requestBody.required ? h('span', { class: 'hlibz-tryit-required', text: ' required' }) : null],
+        function () { return typeSelect.value; },
+        [types.length > 1 ? field('Content type', typeSelect) : h('p', { class: 'hlibz-tryit-hint', text: types[0] }),
+          exampleField,
+          filesBox,
+          editor,
+          h('div', { class: 'hlibz-tryit-body-bar' }, note, resetButton)]);
     }
 
     // Accept, when the operation can answer in more than one media type.
@@ -1647,10 +1696,18 @@
             text: 'Deprecated: this operation still answers, but may be removed. '
               + 'The docs above may say what to use instead.' })
           : null,
-        h('section', { class: 'hlibz-tryit-section' },
-          field('Server', serverSelect),
-          varsBox,
-          acceptSelect ? field('Accept', acceptSelect) : null),
+        // Starts shut, since most requests go where the docs came from, unless the server has
+        // variables, which are fields someone has to look at. Accept is in here too, so the
+        // heading names it while shut.
+        foldable('server', 'Server',
+          function () {
+            return serverSelect.options[serverSelect.selectedIndex].text
+              + (acceptSelect ? ' · Accept: ' + (acceptSelect.value || 'any') : '');
+          },
+          [field('Base URL', serverSelect),
+            varsBox,
+            acceptSelect ? field('Accept', acceptSelect) : null],
+          !shown.names.length),
         authSection,
         paramSections,
         headersSection,
@@ -1666,7 +1723,10 @@
     if (!dialog.open) {
       dialog.showModal();
     }
-    var first = dialog.querySelector('.hlibz-tryit-body input, .hlibz-tryit-body textarea, .hlibz-tryit-body select');
+    // The first field that can take focus: one inside a folded section can't.
+    var first = Array.prototype.filter.call(
+      dialog.querySelectorAll('.hlibz-tryit-body input, .hlibz-tryit-body textarea, .hlibz-tryit-body select'),
+      function (el) { return !el.closest('details:not([open])'); })[0];
     if (first) {
       first.focus();
     }
@@ -1842,6 +1902,11 @@
         if (item.input.required) {
           missing.push(p.name);
           item.input.setAttribute('aria-invalid', 'true');
+          // A missing value in a folded section is otherwise an error about a field not on screen.
+          var fold = item.input.closest('details');
+          if (fold) {
+            fold.open = true;
+          }
         }
         return;
       }
@@ -1871,22 +1936,27 @@
       var type = state.body.typeSelect.value;
       var text = state.body.editor.value;
       var files = state.body.files();
+      // Like a missing parameter: what is wrong with the body is said with the body on screen.
+      var bodyError = function (message) {
+        state.folds.body.open = true;
+        return new Error(message);
+      };
       var noFile = files.filter(function (f) {
         f.input.removeAttribute('aria-invalid');
         return f.required && !f.input.files.length;
       });
       if (noFile.length) {
         noFile.forEach(function (f) { f.input.setAttribute('aria-invalid', 'true'); });
-        throw new Error('Choose a file for: ' + noFile.map(function (f) { return f.name; }).join(', ') + '.');
+        throw bodyError('Choose a file for: ' + noFile.map(function (f) { return f.name; }).join(', ') + '.');
       }
       var encoded;
       try {
         encoded = bodyHandlerFor(type, state.body.content[type]).encode(text, files);
       } catch (e) {
-        throw new Error('The body is not valid for ' + type + ': ' + e.message);
+        throw bodyError('The body is not valid for ' + type + ': ' + e.message);
       }
       if (encoded === undefined && state.body.required) {
-        throw new Error(bodyHandlerFor(type, state.body.content[type]).whole
+        throw bodyError(bodyHandlerFor(type, state.body.content[type]).whole
           ? 'Choose a file to send as the body.'
           : 'The body is required.');
       }

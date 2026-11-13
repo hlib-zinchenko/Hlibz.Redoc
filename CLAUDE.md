@@ -319,6 +319,16 @@ takes one project at a time.
       `example` or named `examples`, and the discriminator goes **first** in the sample, because
       System.Text.Json reads it from the first property only. Extra headers are applied after
       everything else in `buildRequest`, so they can override Accept and the like.
+    - Server, Authorization, the parameter groups (Path, Query, Headers), Extra headers and Body are
+      `<details>` built by `foldable`, each folding on its own so a long query or a dozen headers
+      doesn't push Send off the panel; which were shut is part of the draft (`folded`), per
+      operation, and wins over the defaults once there is one. The defaults: Extra headers starts
+      shut, Server starts shut unless the selected server has variables to fill in, and
+      Authorization starts shut when a credential is already typed for one of the operation's
+      schemes — which, with `CredentialStorage` on, includes after a reload. A folded section is
+      still sent, so its heading carries a tally while shut (for auth only "set" or "not set", never
+      the value), and Send reopens one holding a missing required value, a server variable without
+      one or a body that can't be sent — otherwise the error names a field that isn't on screen.
     - `ReDocTryItTests` covers the server half only; the script's behaviour is
       `tests/Hlibz.Redoc.AspNetCore.BrowserTests` (Playwright, a smoke test of the paths a person
       checks by hand). It finds operations by anchor, so it reads the tag's slug off the sidebar
