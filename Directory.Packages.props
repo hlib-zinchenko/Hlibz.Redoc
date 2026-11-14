@@ -3,14 +3,27 @@
         <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     </PropertyGroup>
     <ItemGroup>
-        <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
         <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
         <PackageVersion Include="Microsoft.Playwright" Version="1.64.1" />
         <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.403" />
         <PackageVersion Include="Redoc.AspNetCore" Version="1.0.0" />
-        <PackageVersion Include="Swashbuckle.AspNetCore.ReDoc" Version="10.3.1" />
-        <PackageVersion Include="Swashbuckle.AspNetCore.SwaggerGen" Version="10.3.1" />
+        <!-- A range, and it packs as one: 11.0 moved to ReDoc 3, where the Swashbuckle adapter's
+             theme doesn't apply and its selector does nothing, so the adapter's own dependency
+             stops below 11 rather than letting a consumer upgrade into a page that only looks
+             fine. -->
+        <PackageVersion Include="Swashbuckle.AspNetCore.ReDoc" Version="[10.3.1, 11.0.0)" />
         <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
         <PackageVersion Include="xunit.v3" Version="4.0.2" />
+    </ItemGroup>
+    <!-- Test-only generators, one generation per framework: what a .NET 11 app actually runs is
+         Microsoft.AspNetCore.OpenApi 11 (net11.0 only, Microsoft.OpenApi 3.x), and Swashbuckle
+         11 is the one that shares that Microsoft.OpenApi with it. -->
+    <ItemGroup Condition="'$(TargetFramework)' == 'net11.0'">
+        <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="11.0.0" />
+        <PackageVersion Include="Swashbuckle.AspNetCore.SwaggerGen" Version="11.0.1" />
+    </ItemGroup>
+    <ItemGroup Condition="'$(TargetFramework)' != 'net11.0'">
+        <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
+        <PackageVersion Include="Swashbuckle.AspNetCore.SwaggerGen" Version="10.3.1" />
     </ItemGroup>
 </Project>

@@ -96,7 +96,8 @@ public static partial class SampleApi
             .AddOpenApiOperationTransformer((operation, _, _) =>
             {
                 if (operation.RequestBody?.Content?.TryGetValue(
-                    "application/json", out OpenApiMediaType? json) == true)
+                    "application/json", out MediaTypeEntry? entry) == true
+                    && entry is OpenApiMediaType json)
                 {
                     json.Examples = NewWidgetExamples();
                 }

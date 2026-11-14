@@ -94,9 +94,9 @@ Both adapters behave identically; the package reference differs, the code doesn'
 
 | | `Hlibz.Redoc.AspNetCore` | The two adapters |
 |---|---|---|
-| Library target | `net8.0` | `net8.0` |
-| Works in apps targeting | net8.0, net9.0, net10.0 | net8.0, net9.0, net10.0 |
-| Requires | nothing but ASP.NET Core | `Redoc.AspNetCore` ≥ 1.0.0, or `Swashbuckle.AspNetCore.ReDoc` ≥ 10.3.1 |
+| Library target | `net8.0`, `net11.0` | `net8.0`, `net11.0` |
+| Works in apps targeting | net8.0 through net11.0 | net8.0 through net11.0 |
+| Requires | nothing but ASP.NET Core | `Redoc.AspNetCore` ≥ 1.0.0, or `Swashbuckle.AspNetCore.ReDoc` 10.x (≥ 10.3.1) |
 | OpenAPI generator | any that registers an `IDocumentProvider`: `AddOpenApi`, Swashbuckle, NSwag | the host's own |
 | Trimming / AOT | `IsAotCompatible`, end to end: nothing here serializes reflectively | `IsAotCompatible` for this assembly only — the host serializes ReDoc's config reflectively |
 

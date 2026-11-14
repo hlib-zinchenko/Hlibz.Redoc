@@ -1,0 +1,15 @@
+<Project>
+
+    <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+    <!-- All four packages, one list, in lockstep like their version. net8.0 is the floor; net11.0
+         gives a .NET 11 app an assembly built and analyzed against its own framework, and is
+         where runtime async will go once the compiler takes it without LangVersion=preview.
+         Don't give one package a list of its own: the adapters and the host call core's
+         internals, and identical lists are what guarantee each pairs with core built for the same
+         framework. -->
+    <PropertyGroup>
+        <TargetFrameworks>net8.0;net11.0</TargetFrameworks>
+    </PropertyGroup>
+
+</Project>

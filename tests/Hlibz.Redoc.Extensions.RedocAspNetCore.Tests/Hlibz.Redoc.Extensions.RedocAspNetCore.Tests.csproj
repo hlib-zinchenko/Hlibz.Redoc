@@ -5,8 +5,9 @@
     <IsPackable>false</IsPackable>
     <!-- The document-name check resolves the OpenAPI providers' internal IDocumentProvider by
          type name, so the tests exercise the real packages rather than a stand-in. AddOpenApi
-         needs net9.0+. The library under test is still its net8.0 assembly. -->
-    <TargetFramework>net10.0</TargetFramework>
+         needs net9.0+. On net10.0 the library under test is its net8.0 assembly; on net11.0 it
+         is its own net11.0 one, against Microsoft.AspNetCore.OpenApi 11. -->
+    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
   </PropertyGroup>
 
   <ItemGroup>

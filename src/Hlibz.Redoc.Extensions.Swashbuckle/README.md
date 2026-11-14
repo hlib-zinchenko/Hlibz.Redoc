@@ -25,8 +25,16 @@ dotnet add package Hlibz.Redoc.Extensions.Swashbuckle
 using Hlibz.Redoc.Extensions;
 ```
 
-Requires `Swashbuckle.AspNetCore.ReDoc` ≥ 10.3.1, which embeds ReDoc 2.5.4. Targets `net8.0`; works
-in apps on net8.0, net9.0 and net10.0.
+Requires `Swashbuckle.AspNetCore.ReDoc` 10.x (≥ 10.3.1), which embeds ReDoc 2.5.4. Targets `net8.0`
+and `net11.0`; works in apps on net8.0 through net11.0, including an app on .NET 11 that keeps
+Swashbuckle at 10.x — ReDoc 2.5.4 renders the OpenAPI 3.2.0 documents ASP.NET Core 11 writes.
+
+> **Not with `Swashbuckle.AspNetCore.ReDoc` 11.** Swashbuckle 11 embeds ReDoc 3, which has dark
+> mode and a color-mode toggle of its own. This package's theme doesn't reach it, and the theme
+> selector changes nothing, so the dependency stops below 11: referencing 11 yourself alongside
+> this package gets you NuGet warning NU1608. For ReDoc 3, use
+> [`Hlibz.Redoc.AspNetCore`](https://www.nuget.org/packages/Hlibz.Redoc.AspNetCore), which is
+> built for it.
 
 > On `Redoc.AspNetCore` instead? Install
 > [`Hlibz.Redoc.Extensions.RedocAspNetCore`](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.RedocAspNetCore).

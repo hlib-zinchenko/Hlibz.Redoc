@@ -3,9 +3,10 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
-    <!-- No host package and no AddOpenApi, so this one runs on the library's own net8.0. It
-         reaches core's internals through InternalsVisibleTo; the assembly name is what core
-         grants that to, so don't rename this project without updating core's csproj. -->
+    <!-- No host package and no AddOpenApi, so this one runs on each of the library's own
+         frameworks. It reaches core's internals through InternalsVisibleTo; the assembly name is
+         what core grants that to, so don't rename this project without updating core's csproj. -->
+    <TargetFrameworks>net8.0;net11.0</TargetFrameworks>
   </PropertyGroup>
 
   <ItemGroup>

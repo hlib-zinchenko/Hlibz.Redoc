@@ -6,8 +6,11 @@ if the change is large, so we can agree on the shape before you write it.
 
 ## Requirements
 
-.NET 10 SDK. The libraries target `net8.0`; the samples target `net10.0` so they can use the native
-`AddOpenApi()` / `MapOpenApi()` APIs.
+.NET 11 SDK, plus the .NET 8 and .NET 10 runtimes for the test runs on those frameworks. The
+libraries target `net8.0` and `net11.0`; the samples target `net10.0` so they can use the native
+`AddOpenApi()` / `MapOpenApi()` APIs. The test suites run on both of a library's frameworks
+(`net10.0` standing in for `net8.0` where they need `AddOpenApi`), so `dotnet test --project`
+runs each suite twice.
 
 ## Build and test
 

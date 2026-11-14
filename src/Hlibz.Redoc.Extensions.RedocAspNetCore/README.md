@@ -28,8 +28,17 @@ dotnet add package Hlibz.Redoc.Extensions.RedocAspNetCore
 using Hlibz.Redoc.Extensions;
 ```
 
-Requires `Redoc.AspNetCore` ≥ 1.0.0, which embeds ReDoc 2.0.0. Targets `net8.0`; works in apps on
-net8.0, net9.0 and net10.0.
+Requires `Redoc.AspNetCore` ≥ 1.0.0, which embeds ReDoc 2.0.0. Targets `net8.0` and `net11.0`;
+works in apps on net8.0 through net11.0.
+
+> **On .NET 11, pin the document to OpenAPI 3.1.** ASP.NET Core 11's `AddOpenApi()` writes
+> OpenAPI 3.2.0 by default, and ReDoc 2.0.0 refuses any version it doesn't know: the page is blank
+> but for "Unsupported OpenAPI Version: 3.2.0". Nothing in this package can change the document,
+> so set the version where it is generated:
+>
+> ```csharp
+> builder.Services.AddOpenApi(options => options.OpenApiVersion = OpenApiSpecVersion.OpenApi3_1);
+> ```
 
 > On `Swashbuckle.AspNetCore.ReDoc` instead? Install
 > [`Hlibz.Redoc.Extensions.Swashbuckle`](https://www.nuget.org/packages/Hlibz.Redoc.Extensions.Swashbuckle).

@@ -36,7 +36,8 @@ dotnet add package Hlibz.Redoc.AspNetCore
 using Hlibz.Redoc.Extensions;
 ```
 
-Targets `net8.0`; works in apps on net8.0, net9.0 and net10.0. Depends on nothing but ASP.NET Core.
+Targets `net8.0` and `net11.0`; works in apps on net8.0 through net11.0. Depends on nothing but
+ASP.NET Core.
 
 ## Quick start
 

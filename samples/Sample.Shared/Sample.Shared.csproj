@@ -1,8 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- Native AddOpenApi()/MapOpenApi() needs net9.0+, same as the samples that use this. -->
-    <TargetFramework>net10.0</TargetFramework>
+    <!-- Native AddOpenApi()/MapOpenApi() needs net9.0+, same as the samples that use this.
+         net11.0 as well for the browser suites, which run on both: Microsoft.AspNetCore.OpenApi 11
+         is net11.0-only and brings Microsoft.OpenApi 3.x (see MediaTypeEntry.cs). -->
+    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
     <RootNamespace>Sample.Shared</RootNamespace>
     <IsPackable>false</IsPackable>
   </PropertyGroup>

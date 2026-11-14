@@ -4,8 +4,14 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
+#if NET11_0_OR_GREATER
+using Microsoft.AspNetCore.OpenApi;
+#endif
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+#if NET11_0_OR_GREATER
+using Microsoft.OpenApi;
+#endif
 using Microsoft.Playwright;
 
 using Sample.Shared;
@@ -91,6 +97,17 @@ public sealed class ThemeSites : IAsyncLifetime
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Logging.SetMinimumLevel(LogLevel.Warning);
         builder.Services.AddSampleDocuments();
+#if NET11_0_OR_GREATER
+        if (host == ReDocHost.RedocAspNetCore)
+        {
+            // What a .NET 11 app on this adapter has to do too: ASP.NET Core 11 writes OpenAPI
+            // 3.2.0 by default, and redoc 2.0.0 refuses any version it doesn't know with a blank
+            // "Unsupported OpenAPI Version" page. 2.5.4 renders 3.2.0, so Swashbuckle is left on
+            // the default and this suite keeps showing that it does.
+            builder.Services.ConfigureAll<OpenApiOptions>(
+                options => options.OpenApiVersion = OpenApiSpecVersion.OpenApi3_1);
+        }
+#endif
 
         WebApplication app = builder.Build();
         app.MapOpenApi();

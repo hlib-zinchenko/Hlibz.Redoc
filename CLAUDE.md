@@ -43,7 +43,11 @@ one adapter is the supported case; don't "fix" this by renaming types apart.
 
 ## Requires
 
-* .NET 10 SDK (the library itself targets `net8.0`; the sample targets `net10.0` to use the native `AddOpenApi()`/`MapOpenApi()` APIs, which require net9.0+)
+* .NET 11 SDK, plus the .NET 8 and 10 runtimes the test runs use. The four packages target
+  `net8.0;net11.0` (set once in `src/Directory.Build.props`); the samples target `net10.0` to use
+  the native `AddOpenApi()`/`MapOpenApi()` APIs, which require net9.0+. Every test suite runs on two
+  frameworks — `net8.0;net11.0` for core's, `net10.0;net11.0` for the rest — so the `net11.0` runs
+  exercise the libraries' own `net11.0` assemblies against `Microsoft.AspNetCore.OpenApi` 11.
 
 ## Commands
 
@@ -537,8 +541,8 @@ takes one project at a time.
   the code a consumer writes doesn't. Both show a `~/` picker link and configure `UseSystemFonts()`
   on the Facilities page only, so the font difference is visible by switching documents. Keeping
   them identical is what makes a host difference show up as a visible difference.
-- `tests/Hlibz.Redoc.Extensions.Core.Tests/` — the host-free suite, on the library's own `net8.0`, with
-  no host reference. It asserts on what `ReDocDarkThemeDefaults.BuildHeadContent`/`BuildConfigValue`
+- `tests/Hlibz.Redoc.Extensions.Core.Tests/` — the host-free suite, on both of the library's own
+  frameworks, with no host reference. It asserts on what `ReDocDarkThemeDefaults.BuildHeadContent`/`BuildConfigValue`
   produce, reached directly through `InternalsVisibleTo`, so those assertions hold for every host
   rather than only the one that happens to be wired up. Anything that is really a statement about
   the theme, the selector, the fonts or the picker belongs here, not in an adapter suite.
@@ -592,12 +596,14 @@ takes one project at a time.
     can't fix it. The probe records it (identical on both hosts) without asserting a color.
 - `tests/Hlibz.Redoc.Extensions.RedocAspNetCore.Tests/` and
   `tests/Hlibz.Redoc.Extensions.Swashbuckle.Tests/` — the conformance source plus that one alias
-  file, nothing else. Both override `TargetFramework` to `net10.0` and reference
+  file, nothing else. Both run on `net10.0;net11.0` and reference
   `Microsoft.AspNetCore.OpenApi` and `Swashbuckle.AspNetCore.SwaggerGen` (test-only) so the
   document-name check runs against the real providers — the type and method names it resolves by
-  string are the fragile part, and a stand-in wouldn't protect them. The library under test is
-  still its `net8.0` assembly. Swashbuckle must be ≥ 10.x: 9.x pins Microsoft.OpenApi 1.x, which
-  collides with what `Microsoft.AspNetCore.OpenApi` 10.x brings in.
+  string are the fragile part, and a stand-in wouldn't protect them. On `net10.0` the library under
+  test is its `net8.0` assembly. The generators' versions follow the framework in
+  `Directory.Packages.props` — 10.x on `net10.0`, 11.x on `net11.0` — because each generation pins
+  its own Microsoft.OpenApi major (2.x, then 3.x) and the two must agree; the same reason
+  Swashbuckle must be ≥ 10.x at all (9.x pins 1.x).
 - What the suites can't reach is the rendered page, so a change to the theme CSS still wants both
   samples open side by side. Phase 2 checked that way that redoc 2.0.0 and 2.5.4 render the theme
   **identically**: a probe of the computed colors (body, scrollbars, sidebar, `h5` captions, every
@@ -661,6 +667,33 @@ package's nuget.org page through its repository link.
   lines — see `.editorconfig`.
 - `Directory.Packages.props` manages package versions centrally; csproj files reference packages
   without a `Version=` attribute.
+- **.NET 11 and the two ReDoc 2 hosts**, measured 2026-11-14 in a browser:
+  - ASP.NET Core 11 writes **OpenAPI 3.2.0** by default. redoc 2.0.0 (Redoc.AspNetCore) refuses it
+    with a blank "Unsupported OpenAPI Version" page; 2.5.4 (Swashbuckle 10.x) and our ReDoc 3 host
+    render it. Nothing here owns the document, so the fix is the consumer's
+    `OpenApiVersion = OpenApi3_1` — in that adapter's README, and in `ThemeSites` on `net11.0`
+    for the Redoc.AspNetCore site only, so the suite still shows 2.5.4 rendering 3.2.0.
+  - **`Swashbuckle.AspNetCore.ReDoc` 11.x embeds ReDoc 3.1.0** (an ES module, no `window.Redoc`)
+    and targets net10.0/net11.0 only. On it the Swashbuckle adapter's page renders and the picker
+    works, but the dark theme is ReDoc 3's own and the theme selector does nothing. So the
+    adapter's dependency is the range `[10.3.1, 11.0.0)`, set in `Directory.Packages.props` and
+    packed as-is: a consumer who references 11 directly gets NU1608 rather than a quietly inert
+    theme. Lifting the cap means making the adapter mean something on ReDoc 3 first.
+  - Sample.Shared builds against both Microsoft.OpenApi 2.x and 3.x; the one API difference it
+    meets (a content map's entries became `IOpenApiMediaType`) is the `MediaTypeEntry` alias.
+- **Runtime async (`<Features>runtime-async=on</Features>`) is deliberately off.** On SDK 11.0.100
+  it does nothing without `LangVersion=preview`. With that set on the `net11.0` build, all five
+  async methods compile to runtime-async IL and every suite passes, but it would mean shipping a GA
+  package built with a preview language version. Microsoft doesn't: the shared framework is
+  runtime-async throughout, while `Microsoft.AspNetCore.OpenApi` 11.0.0 from NuGet isn't. Five
+  methods, each in front of I/O, won't show a difference anyway. Revisit when the compiler takes it
+  without `preview`; the `net11.0` target is what that will need.
+- **All four packages share one framework list**, in `src/Directory.Build.props`, and that is
+  load-bearing: the adapters and the host call core's internals across packages, so with identical
+  lists NuGet hands a consumer core and adapter built for the same framework. If one package
+  dropped a framework the others keep, an adapter built for one could run beside core built for the
+  other, and an internal member that is `#if`'d into only one of them fails at run time, not at
+  build. Nothing in `src/` is `#if`'d today.
 - `Version` lives in `Directory.Build.props`, not in any csproj: core, the adapters and the host
   ship in lockstep, so one `-p:Version` from the release tag has to drive all of them.
 - No StyleCop/SonarAnalyzer: this is a small single-purpose package, kept intentionally

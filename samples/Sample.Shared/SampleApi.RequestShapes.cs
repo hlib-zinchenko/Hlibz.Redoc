@@ -217,7 +217,8 @@ public static partial class SampleApi
             {
                 // The CSV is text, not the JSON array's schema.
                 if (operation.Responses?.TryGetValue("200", out IOpenApiResponse? ok) == true
-                    && ok.Content?.TryGetValue("text/csv", out OpenApiMediaType? csv) == true)
+                    && ok.Content?.TryGetValue("text/csv", out MediaTypeEntry? entry) == true
+                    && entry is OpenApiMediaType csv)
                 {
                     csv.Schema = new OpenApiSchema { Type = JsonSchemaType.String };
                     csv.Example = "id,name,price,status\n" + Widget.Sample.First().Id
@@ -249,13 +250,13 @@ public static partial class SampleApi
                 {
                     Required = true,
                     Description = "The datasheet file itself, as the whole body.",
-                    Content = new Dictionary<string, OpenApiMediaType>
+                    Content = new Dictionary<string, MediaTypeEntry>
                     {
-                        ["application/pdf"] = new()
+                        ["application/pdf"] = new OpenApiMediaType
                         {
                             Schema = new OpenApiSchema { Type = JsonSchemaType.String, Format = "binary" },
                         },
-                        ["image/*"] = new(),
+                        ["image/*"] = new OpenApiMediaType(),
                     },
                 };
                 return Task.CompletedTask;
