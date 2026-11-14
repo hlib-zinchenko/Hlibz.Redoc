@@ -189,6 +189,14 @@ takes one project at a time.
     does the rest from `localStorage['redoc.colorMode']` — ReDoc 3's own key. ReDoc does this with
     an *inline* script, which a strict CSP blocks, so without this the page renders light for a
     moment.
+  - `html { background-color: var(--bg-color) }` in `ReDocPage.Css` is not redundant. Since 3.1.0
+    ReDoc paints its background on its own `.redoc` container rather than `:root` (its "styles
+    leaked into the host page" fix), so without the rule anything outside that container — the
+    toolbar strips below 50rem, overscroll — sits on the browser's canvas, white beside a dark
+    page. The variables themselves are still on `:root`, which is why the presets work unchanged.
+  - The try-it button is sized to ReDoc's page-actions split button, which 3.1.0 made a `small`
+    button (24px, `--border-radius-md`) where 3.0.1's was 34px. A bundle upgrade wants that
+    neighbour measured again.
   - `ReDocSite` (internal) is everything worked out at startup: one `ReDocSitePage` per document
     holding its finished markup and files. Nothing is built per request, because nothing varies
     per request.

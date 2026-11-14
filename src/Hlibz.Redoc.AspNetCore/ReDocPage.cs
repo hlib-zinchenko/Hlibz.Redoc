@@ -346,6 +346,13 @@ internal static class ReDocPage
         const string baseCss = """
             html, body { margin: 0; padding: 0; }
 
+            /* ReDoc 3.1 paints its background on its own container, not on the root as 3.0 did,
+               so whatever sits outside it - the toolbar strips below 50rem, overscroll - would
+               show the browser's canvas: white beside a dark page. The page is ReDoc's alone, so
+               the root gets ReDoc's background back. */
+            html { background-color: var(--bg-color); }
+            html.dark { background-color: var(--bg-color, #09090b); }
+
             /* ReDoc 3 themes itself through CSS custom properties, so this package's controls
                borrow its variables rather than carrying a palette of their own: they then follow
                the active color mode, and any brand override, for free. The fallbacks are only for

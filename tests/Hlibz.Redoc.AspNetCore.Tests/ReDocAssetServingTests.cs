@@ -19,7 +19,7 @@ public class ReDocAssetServingTests
 
         HttpResponseMessage response = await GetAsync(app, BundlePath, "gzip, deflate, br");
 
-        // Brotli wherever it's offered: 507 KB against gzip's 634 KB, and every browser that
+        // Brotli wherever it's offered: 523 KB against gzip's 654 KB, and every browser that
         // speaks it speaks gzip too, so preferring it costs nothing.
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("br", response.Content.Headers.ContentEncoding.ToString());

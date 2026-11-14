@@ -2,21 +2,22 @@
 /* Try-it console. Every color is one of ReDoc 3's own variables, so it follows the color mode, a
    dark preset and PrimaryColor with no rules of its own; the fallbacks only matter if ReDoc's
    styles failed to load. */
-/* Sized and aligned to ReDoc's own Copy split button beside it (34px, measured on 3.0.1).
+/* Sized and aligned to ReDoc's own Copy split button beside it, which is a small button since
+   3.1.0: 24px tall, --border-radius-md corners (measured on 3.1.0; 3.0.1's was 34px).
    page-actions is a plain block, so an inline button would sit on the text baseline, a few pixels
    below its neighbour: vertical-align: top lines the two up. */
 .hlibz-tryit-open {
   font: inherit;
-  font-size: var(--button-font-size, 14px);
+  font-size: var(--font-size-base, 14px);
   line-height: 22px;
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   vertical-align: top;
-  height: 34px;
-  padding: 0 14px;
+  height: 24px;
+  padding: 0 var(--spacing-sm, 12px);
   margin-right: 8px;
-  border-radius: var(--button-border-radius, 8px);
+  border-radius: var(--border-radius-md, 9px);
   border: 1px solid var(--color-primary-base, #2563eb);
   background: var(--color-primary-base, #2563eb);
   color: var(--bg-color, #fff);

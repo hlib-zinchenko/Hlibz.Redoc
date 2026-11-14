@@ -24,7 +24,7 @@ internal static class ReDocBundle
     /// The ReDoc version in <c>assets/redoc.standalone.js.gz</c>. Kept in step with that file by
     /// hand — <c>assets/README.md</c> records how — and asserted by a test.
     /// </summary>
-    public const string Version = "3.0.1";
+    public const string Version = "3.1.0";
 
     /// <summary>The file name the bundle is served under, relative to the asset route.</summary>
     public const string FileName = "redoc.standalone.js";

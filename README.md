@@ -63,11 +63,11 @@ Both adapters behave identically; the package reference differs, the code doesn'
 | | `Hlibz.Redoc.AspNetCore` | The two adapters |
 |---|---|---|
 | How the page is served | this package serves it | the host serves it; this package adds to it |
-| ReDoc version | 3.0.1, embedded here | whatever the host embeds: 2.5.4 (Swashbuckle) or 2.0.0 (Redoc.AspNetCore) |
+| ReDoc version | 3.1.0, embedded here | whatever the host embeds: 2.5.4 (Swashbuckle) or 2.0.0 (Redoc.AspNetCore) |
 | Dark mode | ReDoc 3's own, plus three named dark palettes and two light ones | this package's dark theme, with a Light/System/Dark switcher |
 | Multiple documents + picker | yes, with groups, search and placement | yes, with groups |
 | Authorization per document | `.RequireAuthorization()` on a document covers its page, its spec and its link | not possible: the host's page is middleware, which carries no metadata |
-| Bundle on the wire | 507 KB brotli / 634 KB gzip, pre-compressed | 1 MB uncompressed (Redoc.AspNetCore) |
+| Bundle on the wire | 523 KB brotli / 654 KB gzip, pre-compressed | 1 MB uncompressed (Redoc.AspNetCore) |
 | `Cache-Control` on the bundle | `public, max-age=31536000, immutable` + strong ETag | `max-age=0` (Swashbuckle); none sent at all (Redoc.AspNetCore) |
 | Strict CSP | `script-src 'self'`, no nonce — nothing is inline | needs a nonce; the host's own `Redoc.init` is inline |
 | Third-party requests | none; ReDoc telemetry off by default | Google Fonts, unless you call `UseSystemFonts()` |

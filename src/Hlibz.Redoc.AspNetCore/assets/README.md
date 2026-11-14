@@ -19,14 +19,14 @@ one version next to a gzip copy of another would show up only as "it works in on
 
 | | |
 |---|---|
-| ReDoc | **3.0.1** |
-| npm tarball | `https://registry.npmjs.org/redoc/-/redoc-3.0.1.tgz` |
-| tarball integrity | `sha512-KDfoKaYW19LCl4YStgBnwlaNjYEFfs5zCNt1s1WZ2YM5u8d26Yuzd2l43fZO851ZsgIMe/D640fDJkD8eaRQKQ==` |
+| ReDoc | **3.1.0** |
+| npm tarball | `https://registry.npmjs.org/redoc/-/redoc-3.1.0.tgz` |
+| tarball integrity | `sha512-hYsN0ABpoDAPE2+A+mNvs6DDTzhPlJaIeJK2jCFgvxtiXHpWzBXqNBWWKUNq/VLBMZGnyT4qiQnODVWEX031uQ==` |
 | file in tarball | `package/bundles/redoc.standalone.js` |
-| that file, sha256 | `8c70c2de83d33e33a75b225e573d6d9fe851f066f824b44b1637d831d52d7543` |
-| uncompressed | 2,290,276 bytes |
-| as stored, gzip | 648,868 bytes |
-| as stored, brotli | 519,455 bytes |
+| that file, sha256 | `d99813b04c68d5f80585c2f1319ed16b16dca2a84f32cf1b5e105a713567562b` |
+| uncompressed | 2,357,453 bytes |
+| as stored, gzip | 669,945 bytes |
+| as stored, brotli | 535,156 bytes |
 
 `redoc-LICENSE.txt` is ReDoc's own MIT licence, taken from the same tarball and packed alongside
 the bundle. `ReDocBundle.Version` must match the version above — a test asserts it.
@@ -50,6 +50,9 @@ cp /tmp/redoc/package/LICENSE src/Hlibz.Redoc.AspNetCore/assets/redoc-LICENSE.tx
 run even when the bundle hasn't changed. Brotli stores no timestamp, so `brotli` needs no such
 flag.
 
-Then update `ReDocBundle.Version` and this table, and re-check the two things the bundle can break:
-the page still renders (run `samples/Sample.Own`), and the CSP in the README still covers whatever
-the new bundle fetches.
+Then update `ReDocBundle.Version` and this table, and re-check the things the bundle can break:
+the page still renders (run `samples/Sample.Own`), the CSP in the README still covers whatever
+the new bundle fetches, and everything that hangs off ReDoc's markup rather than its options — the
+try-it button against the page-actions button beside it, the picker in the sidebar, and the page
+background outside ReDoc's container (3.1.0 moved it off `:root`). The browser suite covers the
+try-it console's hooks; the rest wants eyes on the sample, in both color modes and at phone width.
