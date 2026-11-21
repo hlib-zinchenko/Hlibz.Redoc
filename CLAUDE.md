@@ -266,7 +266,8 @@ takes one project at a time.
       never runs, and nothing it attaches — positioning, Escape, outside-click — exists.
       It shipped that way once, caught in the sample rather than by a test.
   - `EnableTryIt()` (`ReDocTryItOptions`, `ReDocTryIt`) is the try-it console, off by default.
-    `TRY-IT.md` is the investigation behind it. The script and CSS are **real files**,
+    The investigation behind it was `TRY-IT.md`, removed in `09a347b`; `git show 09a347b^:TRY-IT.md`
+    reads it. The script and CSS are **real files**,
     `assets/redoc-tryit.js` and `.css`, embedded and read once. The script is the same on every
     page; what varies per page (spec URL, app base as `../` per route segment) travels as `data-`
     attributes on its `<script>` tag, so nothing is inline. It is served beside each page, inside
