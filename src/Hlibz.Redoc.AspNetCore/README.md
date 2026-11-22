@@ -3,14 +3,14 @@
 # Hlibz.Redoc.AspNetCore
 
 **ReDoc 3, served by your own app.** No `Redoc.AspNetCore`, no `Swashbuckle` — this package embeds
-the ReDoc 3.1.0 bundle and serves its own page, so it owns the things middleware someone else wrote
+the ReDoc 3.2.0 bundle and serves its own page, so it owns the things middleware someone else wrote
 can't give you:
 
 - **Authorization per document.** `.RequireAuthorization()` on a `ReDocDocument` covers its page,
   the OpenAPI document it renders *and* the link to it. One call, three ends closed.
 - **Several OpenAPI documents, with a picker** — groups, optional search, and placement in a corner
   or in ReDoc's sidebar. ReDoc has nothing like it on any version.
-- **A bundle that caches.** 523 KB brotli, pre-compressed, `max-age=31536000, immutable` and a
+- **A bundle that caches.** 527 KB brotli, pre-compressed, `max-age=31536000, immutable` and a
   strong ETag, served once for the whole site.
 - **A strict CSP with no nonce.** Nothing on the page is inline — not the config, not the picker,
   not the color-mode bootstrap — so `script-src 'self'` holds.
@@ -768,9 +768,9 @@ code blocks in one go. If you set both accents, the printed copy uses `PrimaryCo
 
 | | |
 |---|---|
-| ReDoc | 3.1.0, MIT, checked into the repo pre-compressed and embedded in the assembly |
+| ReDoc | 3.2.0, MIT, checked into the repo pre-compressed and embedded in the assembly |
 | Served as | the stored bytes for whichever encoding the request accepts — nothing is compressed per request |
-| Size on the wire | **523 KB** brotli, 654 KB gzip, 2.2 MB for a client that takes neither |
+| Size on the wire | **527 KB** brotli, 660 KB gzip, 2.3 MB for a client that takes neither |
 | Caching | `Cache-Control: public, max-age=31536000, immutable`, `Vary: Accept-Encoding`, a strong ETag per encoding |
 | URL | `{RoutePrefix}/_redoc/redoc.standalone.js?v={hash}`, once for the whole site — switching documents re-downloads nothing, and a package upgrade that changes the bundle changes the URL |
 

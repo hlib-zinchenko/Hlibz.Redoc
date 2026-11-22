@@ -97,7 +97,7 @@ internal static class ReDocAssets
 
     /// <summary>
     /// Serves the embedded bundle in the best encoding the request accepts: the stored bytes,
-    /// untouched, so there is no per-request compression and no uncompressed copy of a 2.2 MB file
+    /// untouched, so there is no per-request compression and no uncompressed copy of a 2.3 MB file
     /// sitting in memory.
     /// </summary>
     public static async Task WriteBundle(HttpContext context)

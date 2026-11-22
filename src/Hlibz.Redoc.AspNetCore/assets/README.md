@@ -19,14 +19,14 @@ one version next to a gzip copy of another would show up only as "it works in on
 
 | | |
 |---|---|
-| ReDoc | **3.1.0** |
-| npm tarball | `https://registry.npmjs.org/redoc/-/redoc-3.1.0.tgz` |
-| tarball integrity | `sha512-hYsN0ABpoDAPE2+A+mNvs6DDTzhPlJaIeJK2jCFgvxtiXHpWzBXqNBWWKUNq/VLBMZGnyT4qiQnODVWEX031uQ==` |
+| ReDoc | **3.2.0** |
+| npm tarball | `https://registry.npmjs.org/redoc/-/redoc-3.2.0.tgz` |
+| tarball integrity | `sha512-RWN9p/BdulGe+Khbo4HrfOC7cZWtLjwBCgeO0O2TNeN7/NljlQ/mPfc0mbANLybHELR8yL9FVlUCbBOs+0CJQg==` |
 | file in tarball | `package/bundles/redoc.standalone.js` |
-| that file, sha256 | `d99813b04c68d5f80585c2f1319ed16b16dca2a84f32cf1b5e105a713567562b` |
-| uncompressed | 2,357,453 bytes |
-| as stored, gzip | 669,945 bytes |
-| as stored, brotli | 535,156 bytes |
+| that file, sha256 | `c82174cbccc3a141f8d8fc7722dbb9e73cc70716b46ba3c897bc4bce06ece1b6` |
+| uncompressed | 2,389,808 bytes |
+| as stored, gzip | 675,445 bytes |
+| as stored, brotli | 540,121 bytes |
 
 `redoc-LICENSE.txt` is ReDoc's own MIT licence, taken from the same tarball and packed alongside
 the bundle. `ReDocBundle.Version` must match the version above — a test asserts it.

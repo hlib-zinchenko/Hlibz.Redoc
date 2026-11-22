@@ -10,7 +10,7 @@ namespace Hlibz.Redoc.Extensions;
 /// The ReDoc bundle this package embeds and serves, in the encodings it is stored in.
 /// </summary>
 /// <remarks>
-/// It is stored compressed and sent that way, so the 2.2 MB bundle neither sits in memory
+/// It is stored compressed and sent that way, so the 2.3 MB bundle neither sits in memory
 /// uncompressed nor gets compressed per request. Brotli and gzip are both pre-built, because this
 /// file is the same bytes for the life of the package version — paying quality 11 once, before the
 /// bundle is ever checked in, is free, where a response-compression middleware would pay a far
@@ -24,7 +24,7 @@ internal static class ReDocBundle
     /// The ReDoc version in <c>assets/redoc.standalone.js.gz</c>. Kept in step with that file by
     /// hand — <c>assets/README.md</c> records how — and asserted by a test.
     /// </summary>
-    public const string Version = "3.1.0";
+    public const string Version = "3.2.0";
 
     /// <summary>The file name the bundle is served under, relative to the asset route.</summary>
     public const string FileName = "redoc.standalone.js";
